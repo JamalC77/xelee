@@ -5,7 +5,6 @@
 static int virtual_writes;
 static PADStatus virtual_status[GC_SLOTS];
 static bool virtual_present[GC_SLOTS];
-HSD_RumbleData HSD_Rumble_804C22E0[GC_SLOTS];
 void pc_log_line(const char* fmt, ...) {
     (void)fmt;
 }
@@ -46,7 +45,7 @@ int main(void) {
     publish_snapshot();
     assert(pc_gcadapter_status(1, &out) && out.button == PAD_BUTTON_A && out.stickX == 80);
     assert(virtual_writes == 0);
-    HSD_Rumble_804C22E0[1].last_status = 2;
+    pc_gcadapter_motor(1, PAD_MOTOR_RUMBLE); /* rumble.c's routing (pad_rumble.c) */
     pc_gcadapter_apply();
     assert(virtual_present[1] && virtual_status[1].button == PAD_BUTTON_A);
     assert(atomic_load(&s_motor_request[1]) == 2);
