@@ -87,11 +87,15 @@ u16 pc_xr_pointer_frame(const PADStatus* pad)
     u16 back = 0;
     ++s_frame;
     /* The Back button beside the screen's bar (hands), or the right mouse
-     * button standing in for it. Neither in a watched match, whose pads are
-     * the host's (src/pc/net_watch.h); its waiting screen still has them. */
+     * button standing in for it. No pointer in a watched match, whose pads
+     * are the host's (src/pc/net_watch.h); its waiting screen still has one.
+     * Back stays: held, it is how a hands-only viewer leaves the match
+     * (pc_watch_hold reads it), and the host's pads overwrite every sim pad
+     * there anyway. */
     const bool off = pc_net_active() || pc_watch_viewing();
-    if (!off && (aurora_xr_screen_back() ||
-                    (mouse_on() && (SDL_GetGlobalMouseState(NULL, NULL) & SDL_BUTTON_RMASK))))
+    if (!pc_net_active() &&
+        (aurora_xr_screen_back() ||
+            (mouse_on() && (SDL_GetGlobalMouseState(NULL, NULL) & SDL_BUTTON_RMASK))))
     {
         back = PAD_BUTTON_B;
     }
