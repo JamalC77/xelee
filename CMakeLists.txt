@@ -378,9 +378,19 @@ endif ()
 
 target_include_directories(melee PRIVATE extern/monocypher)
 
+# The platform layer's C reads the game's structs (StartMeleeData's bitfield
+# rules in slp.c and net_watch.c, the fighter in net_snapshot.c), so it must
+# lay bitfields out as melee_game does. MinGW's default MS layout put a
+# StartMeleeData's fields two bytes off from the game's. The Windows arm64
+# launcher drops the flag from melee_game, so it stays off here too.
+set(MELEE_PC_GCC_BITFIELDS OFF)
+if (WIN32 AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$")
+    set(MELEE_PC_GCC_BITFIELDS ON)
+endif ()
 target_compile_options(melee PRIVATE
         ${MELEE_FP_FLAGS}
         $<$<AND:$<COMPILE_LANGUAGE:C>,$<NOT:$<BOOL:${WIN32}>>,$<NOT:$<BOOL:${ANDROID}>>,$<NOT:$<BOOL:${APPLE}>>>:-fno-pie>
+        $<$<AND:$<COMPILE_LANGUAGE:C>,$<BOOL:${MELEE_PC_GCC_BITFIELDS}>>:-mno-ms-bitfields>
         $<$<BOOL:${ANDROID}>:-march=armv8-a+crc+crypto>
         $<$<BOOL:${ANDROID}>:-mtune=cortex-a73>)
 target_link_libraries(melee PRIVATE melee_game aurora::main melee_enet ${MELEE_CRYPTO_LIBS} ${MELEE_NETWORK_LIBS})
