@@ -1034,6 +1034,7 @@ static char s_host_name[WATCH_NAME_LEN + 1];
 static uint32_t s_cookie, s_nonce;
 static uint8_t s_refused;
 static WatchStatus s_host_status;
+static uint64_t s_status_ns; /* when s_host_status's frame arrived */
 static bool s_have_status;
 static uint64_t s_hello_ns, s_heard_ns, s_ack_ns;
 static uint64_t s_my_id;
@@ -1241,6 +1242,7 @@ static void viewer_take(
         if (!from_file && watch_unpack_status(buf, n, &st) && st.cookie == s_cookie) {
             s_heard_ns = now;
             s_host_status = st;
+            s_status_ns = now;
             s_have_status = true;
         }
         break;
@@ -2478,6 +2480,7 @@ static void viewer_feed(PADStatus* head) {
         gaps = vm->gaps;
     }
     const WatchStatus st = s_host_status;
+    const uint64_t st_ns = s_status_ns;
     watch_unlock();
     if (!ok) {
         static bool logged;
@@ -2514,7 +2517,10 @@ static void viewer_feed(PADStatus* head) {
     if (s_next % REPORT_EVERY == 0) {
         char lag[24] = "unknown";
         if (st.match_seq == seq && st.frame >= 0) {
-            snprintf(lag, sizeof lag, "%.0f ms", (double)(st.frame - (s_next - 1)) * 1000.0 / 60.0);
+            /* STATUS comes once a second: the host has run on since this
+             * one, at 60 ticks a second unless it paused or held. */
+            const double host = st.frame + (double)(now_ns() - st_ns) * 60.0 / 1e9;
+            snprintf(lag, sizeof lag, "%.0f ms", (host - (s_next - 1)) * 1000.0 / 60.0);
         }
         pc_log_line("watch: frame %d: buffered %d/%.1f/%d (min/avg/max), %u starved passes, lag "
                     "%s, loss %u%% (%u of %u datagrams after a gap)",
