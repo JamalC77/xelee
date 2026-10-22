@@ -2282,15 +2282,17 @@ bool pc_watch_hold(void) {
         pc_log_line("watch: leaving the match at frame %d (B held)", (int)s_next);
     }
     int32_t contiguous = -1, last = -1;
-    bool end_known = false;
+    bool end_known = false, cut_off = false;
     watch_lock();
     const ViewMatch* vm = playing();
     if (vm != NULL) {
         contiguous = vm->contiguous;
         end_known = vm->end_known;
         last = vm->last;
+        cut_off = vm->orphaned;
     }
     watch_unlock();
+    cut_off = cut_off || atomic_load(&s_link) == LINK_LOST;
     int32_t avail = contiguous - s_next + 1;
     if (avail < 0) {
         avail = 0;
@@ -2302,6 +2304,12 @@ bool pc_watch_hold(void) {
         int32_t need = s_env.buffer;
         if (end_known && last - s_next + 1 < need) {
             need = last - s_next + 1;
+        }
+        if (cut_off) {
+            /* No more is coming: what arrived plays out, then
+             * pc_watch_lost() ends the scene. Waiting for a full buffer
+             * would hold the scene for good. */
+            need = 1;
         }
         hold = avail == 0 || avail < need;
         s_started = !hold;
