@@ -1423,6 +1423,11 @@ static void role_begin(void) {
     if (s_lock == NULL) {
         s_lock = SDL_CreateMutex();
     }
+    static bool at_exit;
+    if (!at_exit) {
+        at_exit = true;
+        atexit(pc_watch_shutdown);
+    }
     snprintf(s_my_rev, sizeof s_my_rev, "%s", pc_app_rev());
     snprintf(s_my_disc, sizeof s_my_disc, "%s", pc_lan_disc_id());
     snprintf(s_my_name, sizeof s_my_name, "%s", pc_lan_local_name());
@@ -1469,11 +1474,6 @@ static void host_start(void) {
     if (!watch_thread_start()) {
         socket_close();
         return;
-    }
-    static bool at_exit;
-    if (!at_exit) {
-        at_exit = true;
-        atexit(host_bye_all);
     }
     char ip[INET_ADDRSTRLEN];
     local_ipv4(ip, sizeof ip);
@@ -2487,6 +2487,17 @@ void pc_watch_compare(uint32_t ck) {
 
 void pc_watch_set_share(bool on) {
     s_share = on;
+}
+
+/* Closing the app must not leave the thread running into stdio's and SDL's
+ * teardown, nor leave the host holding a closed viewer's only slot until
+ * its silence runs out (a relaunched viewer has a new port, so a new id). */
+void pc_watch_shutdown(void) {
+    if (s_role == ROLE_HOST) {
+        host_stop("exiting");
+    } else if (s_role == ROLE_VIEWER) {
+        pc_watch_client_stop();
+    }
 }
 
 void pc_watch_service(void) {

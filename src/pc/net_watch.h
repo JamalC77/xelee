@@ -34,6 +34,9 @@ struct StartMeleeData;
 void pc_watch_service(void);
 /* The launcher's "Share to watchers"; MELEE_WATCH_SHARE=0|1 overrides it. */
 void pc_watch_set_share(bool on);
+/* The process is exiting (src/pc/vi.c, and atexit): the watch thread is
+ * stopped and the other side told goodbye, in either role. Idempotent. */
+void pc_watch_shutdown(void);
 /* A VS or Sudden Death match is being set up (gmvs.c fn_8016E730, before
  * any of it draws from the RNG). The host captures the header; the viewer
  * writes the taken header's match over `start` and the game's pad state. */

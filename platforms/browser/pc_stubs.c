@@ -162,6 +162,7 @@ void pc_watch_service(void) {}
 void pc_watch_set_share(bool on) {
     (void)on;
 }
+void pc_watch_shutdown(void) {}
 void pc_watch_match_start(struct StartMeleeData* start) {
     (void)start;
 }
