@@ -30,7 +30,7 @@ public class MeleeActivity extends SDLActivity {
     @Override
     protected void onCreate(android.os.Bundle savedInstanceState) {
         // Nothing else asks Android for the app-specific external directory,
-        // so /sdcard/Android/data/dev.melee.game/files never exists (or exists
+        // so /sdcard/Android/data/<application id>/files never exists (or exists
         // owned by adb's shell user if created by hand) and melee-env.txt,
         // which pc_env_file_bootstrap reads from there, can never load.
         // Asking once makes the system create it owned by this app.
@@ -213,7 +213,11 @@ public class MeleeActivity extends SDLActivity {
         }
     }
 
-    private static final String INSTALL_STATUS = "dev.melee.game.INSTALL_STATUS";
+    /* The installer's status broadcast, under this app's own id: a fork
+     * installed beside the official app has another one. */
+    private String installStatusAction() {
+        return getPackageName() + ".INSTALL_STATUS";
+    }
     private android.content.BroadcastReceiver mInstallStatus;
 
     /* Hand a downloaded APK to the system installer through a PackageInstaller
@@ -250,7 +254,7 @@ public class MeleeActivity extends SDLActivity {
                         }
                     }
                 };
-                android.content.IntentFilter filter = new android.content.IntentFilter(INSTALL_STATUS);
+                android.content.IntentFilter filter = new android.content.IntentFilter(installStatusAction());
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                     registerReceiver(mInstallStatus, filter, android.content.Context.RECEIVER_NOT_EXPORTED);
                 } else {
@@ -275,7 +279,7 @@ public class MeleeActivity extends SDLActivity {
                             }
                             session.fsync(out);
                         }
-                        android.content.Intent status = new android.content.Intent(INSTALL_STATUS).setPackage(getPackageName());
+                        android.content.Intent status = new android.content.Intent(installStatusAction()).setPackage(getPackageName());
                         int flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT
                                 | (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
                                         ? android.app.PendingIntent.FLAG_MUTABLE : 0);

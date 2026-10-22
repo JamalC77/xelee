@@ -37,7 +37,11 @@ struct Preferences {
     bool mute = false, fps = false, reverb = true;
     bool check_updates = true;
     bool custom_textures = true;
+#ifdef MELEE_UNLOCK_ALL_DEFAULT
+    bool unlock_all = true;  // a fork that starts with the full roster (CMakeLists.txt)
+#else
     bool unlock_all = false;
+#endif
     int hud_mode = 0;
     bool frozen_stadium = false;
     bool free_camera = false;

@@ -54,7 +54,9 @@ import subprocess
 import sys
 import time
 
-PKG = "dev.melee.game"
+# The application id: Xelee Watch's by default; --pkg (or MELEE_ANDROID_PKG)
+# for another build, such as the official app's dev.melee.game.
+PKG = os.environ.get("MELEE_ANDROID_PKG", "dev.melee.game.watch")
 FILES = f"/sdcard/Android/data/{PKG}/files"
 ENV_FILE = f"{FILES}/melee-env.txt"
 CTL_FILE = f"{FILES}/melee-ctl.txt"
@@ -262,6 +264,18 @@ def summarize(text):
 DUMP_DIR = f"{FILES}/dump"
 
 
+def set_package(pkg):
+    """Point every on-device path at another application id's files (--pkg)."""
+    global PKG, FILES, ENV_FILE, CTL_FILE, GAME_LOG, ENV_SAVED, DUMP_DIR
+    PKG = pkg
+    FILES = f"/sdcard/Android/data/{PKG}/files"
+    ENV_FILE = f"{FILES}/melee-env.txt"
+    CTL_FILE = f"{FILES}/melee-ctl.txt"
+    GAME_LOG = f"{FILES}/melee-log.txt"
+    ENV_SAVED = ENV_FILE + ".player"
+    DUMP_DIR = f"{FILES}/dump"
+
+
 def view_coverage(label):
     """How much of the left eye the 3D view drew (its alpha), from the dump,
     which is kept as build/quest-perf/<label>-eye.pgm to look at."""
@@ -390,6 +404,7 @@ def run_phases(args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--pkg", default=PKG, help=f"the app's application id (default {PKG})")
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run")
     r.add_argument("--stage", type=int, default=31)
@@ -416,6 +431,7 @@ def main():
     sub.add_parser("handback", help="let the headset sleep: the end of a batch")
     sub.add_parser("grant", help="grant the game's runtime permissions (also done by every run)")
     args = ap.parse_args()
+    set_package(args.pkg)
     if args.cmd == "summarize":
         with open(args.log) as f:
             print(summarize(f.read()))

@@ -1924,7 +1924,11 @@ public:
         } else if (ustate.status == pc::updater::Status::Checking) {
             label("port-update-status", "Checking for updates...");
         } else if (ustate.status == pc::updater::Status::Failed) {
+#ifdef MELEE_NO_UPDATER
+            label("port-update-status", ustate.message); /* "Updates are off in this build" */
+#else
             label("port-update-status", "Check failed");
+#endif
         } else {
             label("port-update-status", "Up to date (" + pc::get_app_version() + ")");
         }

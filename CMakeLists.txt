@@ -381,6 +381,26 @@ target_compile_options(melee PRIVATE
         $<$<BOOL:${ANDROID}>:-mtune=cortex-a73>)
 target_link_libraries(melee PRIVATE melee_game aurora::main melee_enet ${MELEE_CRYPTO_LIBS} ${MELEE_NETWORK_LIBS})
 
+# The Xelee Watch fork (spectator-spec.md section 6) installs beside the
+# official app. Its updater would offer the official releases, which cannot
+# install over an app signed with another key, so it is off; the launcher
+# starts with everything unlocked; and on Android its application id is its
+# own (tools/build_android.sh passes the one build.gradle packages, and
+# main.c reads melee-env.txt and writes logs under it).
+option(MELEE_NO_UPDATER "Build without the release updater (a fork)" ON)
+option(MELEE_UNLOCK_ALL_DEFAULT "Start the launcher's unlock-all setting on" ON)
+set(MELEE_ANDROID_PKG "dev.melee.game.watch" CACHE STRING
+        "Android application id: platforms/android/app/build.gradle's applicationId")
+if (MELEE_NO_UPDATER)
+    target_compile_definitions(melee PRIVATE MELEE_NO_UPDATER=1)
+endif ()
+if (MELEE_UNLOCK_ALL_DEFAULT)
+    target_compile_definitions(melee PRIVATE MELEE_UNLOCK_ALL_DEFAULT=1)
+endif ()
+if (ANDROID)
+    target_compile_definitions(melee PRIVATE "MELEE_ANDROID_PKG=\"${MELEE_ANDROID_PKG}\"")
+endif ()
+
 # Positional sound effects (src/pc/spatial_audio.h), with Valve's Steam Audio.
 # On by default where the SDK can be had (cmake/SteamAudio.cmake fetches it);
 # otherwise compiled out. Built in, it follows the launcher's Audio setting

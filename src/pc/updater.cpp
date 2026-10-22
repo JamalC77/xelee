@@ -652,6 +652,17 @@ bool http_download_file_curl(
 }  // namespace
 
 void check_for_updates_async(bool include_prereleases) {
+#ifdef MELEE_NO_UPDATER
+    /* A fork build (CMakeLists.txt): the releases this would offer are the
+     * official app's, which cannot install over a fork signed with another
+     * key. Every check lands here -- the launcher's at startup and both
+     * "check now" buttons -- and only says so. */
+    (void)include_prereleases;
+    std::lock_guard lock(g_updater_mutex);
+    g_updater_state.status = Status::Failed;
+    g_updater_state.message = "Updates are off in this build";
+    return;
+#endif
     {
         std::lock_guard lock(g_updater_mutex);
         if (g_updater_state.status == Status::Checking ||

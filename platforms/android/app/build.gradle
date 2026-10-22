@@ -15,6 +15,11 @@ def meleeXr = (project.findProperty('melee.xr') ?: 'false').toString().toBoolean
 // ASan runtime the build stages next to it (src/asan/jniLibs, untracked).
 def meleeAsan = (project.findProperty('melee.asan') ?: 'false').toString().toBoolean()
 
+// -Pmelee.pkg=<id> (tools/build_android.sh, from MELEE_ANDROID_PKG): the
+// application id. Xelee Watch is a fork with its own, so it installs beside
+// the official app (dev.melee.game) and its saves; the Java namespace stays.
+def meleePkg = (project.findProperty('melee.pkg') ?: 'dev.melee.game.watch').toString()
+
 def meleeVersion = (System.getenv('MELEE_VERSION') ?: '0.1.0-beta').replaceFirst(/^v/, '')
 def meleeVersionCode = {
     def m = (meleeVersion =~ /^(\d+)\.(\d+)\.(\d+)/)
@@ -26,7 +31,7 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId 'dev.melee.game'
+        applicationId meleePkg
         minSdk 26
         targetSdk 34
         // From the release tag (MELEE_VERSION, v0.1.0-beta): an update must

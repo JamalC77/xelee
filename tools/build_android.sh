@@ -9,6 +9,14 @@ ANDROID_DIR="${ROOT_DIR}/platforms/android"
 # its own directory and packages the Khronos OpenXR loader and the XR manifest
 # overlay (platforms/android/app/src/xr).
 MELEE_XR="${MELEE_XR:-0}"
+# The application id, passed to both halves so they agree: CMake builds the
+# app's external files paths from it (src/pc/main.c), Gradle packages it
+# (platforms/android/app/build.gradle). Xelee Watch has its own, so it
+# installs beside the official app (dev.melee.game) and its saves.
+MELEE_ANDROID_PKG="${MELEE_ANDROID_PKG:-dev.melee.game.watch}"
+# The version (pc_app_rev(), versionName): peers that differ refuse each other,
+# so every fork build carries one; CI sets v0.1.0-watch.<run number>.
+export MELEE_VERSION="${MELEE_VERSION:-v0.1.0-watch.0}"
 XR_CMAKE_ARGS=()
 XR_GRADLE_ARGS=()
 APK_NAME=Melee-Android-arm64.apk
@@ -108,6 +116,7 @@ cmake -B "${BUILD_DIR}" -G Ninja \
     -DANDROID_PLATFORM=android-26 \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
     -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=ON \
+    "-DMELEE_ANDROID_PKG=${MELEE_ANDROID_PKG}" \
     "${XR_CMAKE_ARGS[@]}"
 SDL_JAVA_SOURCE_DIR="$(sed -n 's/^AURORA_SDL3_JAVA_SOURCE_DIR:INTERNAL=//p' "${BUILD_DIR}/CMakeCache.txt")"
 SDL_VERSION_PATTERN='private static final int SDL_(MAJOR|MINOR|MICRO)_VERSION ='
@@ -172,10 +181,10 @@ export MELEE_KEYSTORE_PASSWORD MELEE_KEY_ALIAS MELEE_KEY_PASSWORD
 
 echo "=== Building Melee Android APK ==="
 cd "${ANDROID_DIR}"
-./gradlew --no-daemon :app:assembleRelease "${XR_GRADLE_ARGS[@]}" || {
+./gradlew --no-daemon :app:assembleRelease "-Pmelee.pkg=${MELEE_ANDROID_PKG}" "${XR_GRADLE_ARGS[@]}" || {
     echo "Gradle assembleRelease failed, retrying once after 5s..."
     sleep 5
-    ./gradlew --no-daemon :app:assembleRelease --stacktrace "${XR_GRADLE_ARGS[@]}"
+    ./gradlew --no-daemon :app:assembleRelease --stacktrace "-Pmelee.pkg=${MELEE_ANDROID_PKG}" "${XR_GRADLE_ARGS[@]}"
 }
 
 APK="${ROOT_DIR}/dist/${APK_NAME}"

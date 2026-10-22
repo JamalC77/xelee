@@ -113,7 +113,14 @@ static void melee_install_crash_handler(void) {}
 #endif
 
 #if defined(__ANDROID__)
-#define ANDROID_LOG_DIR "/sdcard/Android/data/dev.melee.game/files/logs"
+/* The app's external files directory, under its application id: a fork that
+ * installs beside the official app has its own (CMakeLists.txt passes the
+ * id build.gradle packages), and so its own melee-env.txt and logs. */
+#ifndef MELEE_ANDROID_PKG
+#error "MELEE_ANDROID_PKG, the Android application id, comes from CMakeLists.txt"
+#endif
+#define ANDROID_FILES_DIR "/sdcard/Android/data/" MELEE_ANDROID_PKG "/files"
+#define ANDROID_LOG_DIR ANDROID_FILES_DIR "/logs"
 #define ANDROID_LOGS_KEPT 10
 
 /* The newest ANDROID_LOGS_KEPT - 1 logs stay; the names sort by time. */
@@ -468,7 +475,7 @@ static AuroraBackend backend_from_env(void) {
 static void pc_env_file_bootstrap(void) {
     const char* paths[] = {
 #if defined(__ANDROID__)
-        "/sdcard/Android/data/dev.melee.game/files/melee-env.txt",
+        ANDROID_FILES_DIR "/melee-env.txt",
 #endif
         "melee-env.txt",
     };

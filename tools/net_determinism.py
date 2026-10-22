@@ -452,9 +452,18 @@ def replay_windows(args, rec, port):
 # src/pc/main.c:391 hardcodes the one path the app reads its knobs from, so
 # melee-env.txt has to be exactly there; everything else lives beside it
 # because that is the only directory the app can both read and write.
-ANDROID_PKG = "dev.melee.game"
+# The application id: Xelee Watch's by default; --android-pkg (or
+# MELEE_ANDROID_PKG) for another build, such as the official dev.melee.game.
+ANDROID_PKG = os.environ.get("MELEE_ANDROID_PKG", "dev.melee.game.watch")
 ANDROID_ACT = "dev.melee.MeleeActivity"
 ANDROID_DIR = f"/sdcard/Android/data/{ANDROID_PKG}/files"
+
+
+def set_android_package(pkg):
+    """Point the android row at another application id (--android-pkg)."""
+    global ANDROID_PKG, ANDROID_DIR
+    ANDROID_PKG = pkg
+    ANDROID_DIR = f"/sdcard/Android/data/{ANDROID_PKG}/files"
 # adb push must never CREATE a directory under /sdcard/Android/data: the ones
 # it makes are shell:ext_data_rw 0770 and the app then gets EACCES on every
 # file in its own directory, the disc included, which reads as a startup crash
@@ -714,11 +723,14 @@ def parse_args(argv=None):
     ap.add_argument("--android-flip", type=int, metavar="FRAME",
                     help="injection check for the android row: flip one byte of the file the "
                          "device replays at FRAME; the row must report exactly FRAME")
+    ap.add_argument("--android-pkg", default=ANDROID_PKG,
+                    help=f"the android row's application id (default {ANDROID_PKG})")
     return ap.parse_args(argv)
 
 
 def main():
     args = parse_args()
+    set_android_package(args.android_pkg)
     only = [x.strip() for x in args.only.split(",") if x.strip()]
     if not args.keep and not args.rec:
         # --rec usually points inside the work directory.
