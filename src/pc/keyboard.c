@@ -17,6 +17,7 @@
 #ifdef AURORA_ENABLE_OPENXR
 #include <aurora/xr.h>
 #endif
+
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_thread.h>
 #include <SDL3/SDL_timer.h>
@@ -30,6 +31,32 @@
 #include "pc/pc.h"
 #include "pc/touch.h"
 #include "pc/xr_pointer.h"
+
+#ifdef AURORA_ENABLE_OPENXR
+/* The right Touch trigger jumps (X) instead of shielding (R); the left
+ * trigger still shields. MELEE_XR_RTRIGGER=shield restores the stock
+ * mapping. A half press jumps, with hysteresis so a resting finger does not
+ * flutter it. While the laser points at the screen aurora reports no
+ * trigger travel (it clicks instead), so menus are unaffected. */
+#define XR_JUMP_PRESS 115 /* about 45% travel */
+#define XR_JUMP_RELEASE 77 /* about 30% travel */
+
+static void xr_right_trigger_jump(PADStatus* st) {
+    static int s_enabled = -1;
+    static bool s_down;
+    if (s_enabled < 0) {
+        const char* v = getenv("MELEE_XR_RTRIGGER");
+        s_enabled = !(v != NULL && strcmp(v, "shield") == 0);
+    }
+    if (!s_enabled)
+        return;
+    s_down = st->triggerRight >= (s_down ? XR_JUMP_RELEASE : XR_JUMP_PRESS);
+    st->button &= (u16) ~PAD_TRIGGER_R;
+    if (s_down)
+        st->button |= PAD_BUTTON_X;
+    st->triggerRight = 0;
+}
+#endif
 
 static bool s_key[SDL_SCANCODE_COUNT];
 static bool s_key_latched[SDL_SCANCODE_COUNT];
@@ -283,6 +310,7 @@ static void publish_locked(void) {
      * the touch overlay below. */
     PADStatus xr_st = {0};
     if (aurora_xr_get_pad(&xr_st)) {
+        xr_right_trigger_jump(&xr_st);
         if (pc_pad_engaged(&xr_st))
             engaged |= 1u << PC_PAD_DEVICE_XR;
         st.button |= xr_st.button;
