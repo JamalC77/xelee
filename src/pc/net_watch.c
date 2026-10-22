@@ -101,6 +101,8 @@ typedef int watch_sock;
 #define ACK_MIN_NS (8 * MS_NS)
 #define ACK_IDLE_NS (250 * MS_NS)
 #define HOST_LOST_NS (5000 * MS_NS)
+#define VIEWER_VERIFY_NS (3000 * MS_NS) /* a HELLO's slot until an ACK proves its address */
+#define VIEWER_STALE_NS (2000 * MS_NS)  /* this quiet, a viewer has gone: its slot is free */
 #define VIEWER_DROP_NS (10000 * MS_NS)
 #define PREV_KEEP_NS (30000 * MS_NS)
 #define TEST_WAIT_MS 10000
@@ -551,13 +553,20 @@ typedef struct MatchLog {
     LogViewer vw[MAX_VIEWERS];
 } MatchLog;
 
+/* A HELLO's source address can be forged, so a slot gets nothing but the
+ * WELCOME until an ACK carrying its cookie comes back from that address
+ * (spectator-spec.md section 2.4): no STATUS, no HEADER, no match, and it
+ * neither keeps the slot past VIEWER_VERIFY_NS nor stops another viewer
+ * taking it. Only such ACKs keep a slot alive. */
 typedef struct Viewer {
     bool used;
+    bool verified; /* an ACK with its cookie came from its address */
     struct sockaddr_in addr;
     uint64_t id;
     uint32_t cookie;
     uint32_t nonce; /* its HELLO's: a repeat of it gets the same WELCOME */
     char name[WATCH_NAME_LEN + 1];
+    char rev[WATCH_REV_LEN + 1];
     uint64_t heard_ns, status_ns;
 } Viewer;
 
@@ -590,11 +599,12 @@ static void log_free(MatchLog* l) {
     memset(l, 0, sizeof *l);
 }
 
+/* Viewers a match starting now would be shared with. */
 static int count_viewers(void) {
     int n = 0;
     watch_lock();
     for (int i = 0; i < MAX_VIEWERS; i++) {
-        n += s_viewers[i].used;
+        n += s_viewers[i].used && s_viewers[i].verified;
     }
     watch_unlock();
     return n;
@@ -682,11 +692,14 @@ static void host_turn(uint64_t now) {
     watch_lock();
     for (int i = 0; i < MAX_VIEWERS; i++) {
         Viewer* v = &s_viewers[i];
-        if (v->used && now - v->heard_ns > VIEWER_DROP_NS) {
-            char at[32];
-            addr_text(&v->addr, at, sizeof at);
-            pc_log_line("watch: viewer %s (%s) dropped: silent for 10 s", v->name, at);
+        if (v->used && now - v->heard_ns > (v->verified ? VIEWER_DROP_NS : VIEWER_VERIFY_NS)) {
+            if (v->verified) {
+                char at[32];
+                addr_text(&v->addr, at, sizeof at);
+                pc_log_line("watch: viewer %s (%s) dropped: silent for 10 s", v->name, at);
+            }
             v->used = false;
+            v->verified = false;
             for (int k = 0; k < 2; k++) {
                 memset(&s_logs[k].vw[i], 0, sizeof s_logs[k].vw[i]);
             }
@@ -712,7 +725,7 @@ static void host_turn(uint64_t now) {
         s_state == WATCH_STATE_LIVE && cur->used && cur->seq == s_live_seq ? cur->count - 1 : -1;
     for (int i = 0; i < MAX_VIEWERS; i++) {
         Viewer* v = &s_viewers[i];
-        if (!v->used) {
+        if (!v->used || !v->verified) {
             continue;
         }
         if (s_status_dirty || now - v->status_ns >= KEEPALIVE_NS) {
@@ -768,16 +781,26 @@ static void host_on_hello(
     memset(&w, 0, sizeof w);
     w.nonce = h.nonce;
     snprintf(w.name, sizeof w.name, "%s", s_my_name);
-    bool fresh = false;
+    char gone_name[WATCH_NAME_LEN + 1] = "";
+    char gone_at[32] = "";
     watch_lock();
     int slot = -1;
     for (int i = 0; i < MAX_VIEWERS && slot < 0; i++) {
         if (s_viewers[i].used && s_viewers[i].id == h.viewer_id) {
-            slot = i; /* the same viewer again: it restarted, or lost our WELCOME */
+            slot = i; /* the same viewer again: it lost our WELCOME, or the host */
         }
     }
     for (int i = 0; i < MAX_VIEWERS && slot < 0; i++) {
         if (!s_viewers[i].used) {
+            slot = i;
+        }
+    }
+    /* A slot nobody holds: a HELLO's that never proved its address, or a
+     * viewer gone quiet past its 250 ms ACKs without a BYE (closed, killed,
+     * or back on a new port, so with a new id). */
+    for (int i = 0; i < MAX_VIEWERS && slot < 0; i++) {
+        const Viewer* v = &s_viewers[i];
+        if (!v->verified || now - v->heard_ns > VIEWER_STALE_NS) {
             slot = i;
         }
     }
@@ -788,19 +811,23 @@ static void host_on_hello(
         Viewer* v = &s_viewers[slot];
         if (!(v->used && v->nonce == h.nonce && same_addr(&v->addr, from))) {
             /* A new subscription: no match already running is for it. */
-            fresh = true;
+            if (v->used && v->verified && v->id != h.viewer_id) {
+                snprintf(gone_name, sizeof gone_name, "%s", v->name);
+                addr_text(&v->addr, gone_at, sizeof gone_at);
+            }
             v->used = true;
+            v->verified = false;
             v->addr = *from;
             v->id = h.viewer_id;
             v->nonce = h.nonce;
             v->cookie = new_token(h.viewer_id ^ h.nonce);
             snprintf(v->name, sizeof v->name, "%s", h.name);
+            snprintf(v->rev, sizeof v->rev, "%s", h.rev);
+            v->heard_ns = now; /* only its ACKs keep it from here */
             for (int k = 0; k < 2; k++) {
                 memset(&s_logs[k].vw[slot], 0, sizeof s_logs[k].vw[slot]);
             }
         }
-        v->heard_ns = now;
-        v->status_ns = 0;
         w.ok = 1;
         w.cookie = v->cookie;
     }
@@ -810,9 +837,11 @@ static void host_on_hello(
     watch_unlock();
     uint8_t out[WATCH_WELCOME_SIZE];
     send_to(from, out, watch_pack_welcome(out, sizeof out, &w));
-    if (fresh) {
-        pc_log_line("watch: viewer %s (%s) subscribed, rev %s disc %s", h.name, at, h.rev, h.disc);
-    } else if (reason != WATCH_REFUSE_NONE) {
+    if (gone_name[0] != '\0' || gone_at[0] != '\0') {
+        pc_log_line("watch: viewer %s (%s) dropped: silent, and %s (%s) asked for its slot",
+            gone_name, gone_at, h.name, at);
+    }
+    if (reason != WATCH_REFUSE_NONE) {
         static uint32_t logged_nonce;
         if (logged_nonce != h.nonce) {
             logged_nonce = h.nonce;
@@ -832,11 +861,22 @@ static void host_on_ack(
     if (!watch_unpack_ack(buf, n, &a)) {
         return;
     }
+    char name[WATCH_NAME_LEN + 1] = "";
+    char rev[WATCH_REV_LEN + 1] = "";
+    bool verified_now = false;
     watch_lock();
     int slot = 0;
     Viewer* v = viewer_by_cookie(a.cookie, from, &slot);
     if (v != NULL) {
         v->heard_ns = now;
+        if (!v->verified) {
+            /* Its address is its own: from here it is served. */
+            v->verified = true;
+            verified_now = true;
+            v->status_ns = 0;
+            snprintf(name, sizeof name, "%s", v->name);
+            snprintf(rev, sizeof rev, "%s", v->rev);
+        }
         for (int k = 0; k < 2; k++) {
             MatchLog* l = &s_logs[k];
             LogViewer* lv = &l->vw[slot];
@@ -855,6 +895,11 @@ static void host_on_ack(
         }
     }
     watch_unlock();
+    if (verified_now) {
+        char at[32];
+        addr_text(from, at, sizeof at);
+        pc_log_line("watch: viewer %s (%s) subscribed, rev %s disc %s", name, at, rev, s_my_disc);
+    }
 }
 
 static void host_on_bye(const uint8_t* buf, size_t n, const struct sockaddr_in* from) {
@@ -869,6 +914,7 @@ static void host_on_bye(const uint8_t* buf, size_t n, const struct sockaddr_in* 
     if (v != NULL) {
         snprintf(name, sizeof name, "%s", v->name);
         v->used = false;
+        v->verified = false;
         for (int k = 0; k < 2; k++) {
             memset(&s_logs[k].vw[slot], 0, sizeof s_logs[k].vw[slot]);
         }
@@ -1399,7 +1445,7 @@ static void host_bye_all(void) {
     memcpy(viewers, s_viewers, sizeof viewers);
     watch_unlock();
     for (int i = 0; i < MAX_VIEWERS; i++) {
-        if (viewers[i].used) {
+        if (viewers[i].used && viewers[i].verified) {
             uint8_t out[WATCH_BYE_SIZE];
             const size_t n = watch_pack_bye(out, sizeof out, viewers[i].cookie);
             for (int k = 0; k < 3; k++) {
@@ -1592,7 +1638,7 @@ static void host_match_start(StartMeleeData* start) {
     l->cap = LOG_FRAMES0;
     l->last = -1;
     for (int i = 0; i < MAX_VIEWERS; i++) {
-        l->vw[i].attached = s_viewers[i].used;
+        l->vw[i].attached = s_viewers[i].used && s_viewers[i].verified;
         l->vw[i].contiguous = -1;
         l->vw[i].sent_upto = -1;
     }
