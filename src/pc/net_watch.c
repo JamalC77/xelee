@@ -52,11 +52,14 @@
 #include <sysdolphin/baselib/random.h>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wscalar-storage-order" /* disc-struct unions in lb/types.h */
+#include <melee/ft/forward.h>
+#include <melee/gm/gm_1601.h>
 #include <melee/gm/gm_1A3F.h>
 #include <melee/gm/gmmain_lib.h>
 #include <melee/gm/types.h>
 #include <melee/lb/lblanguage.h>
 #include <melee/mn/types.h>
+#include <melee/pl/forward.h>
 #pragma GCC diagnostic pop
 
 #include <SDL3/SDL_mutex.h>
@@ -517,6 +520,34 @@ static unsigned info_stage(const uint8_t* info) {
 static int info_char(const uint8_t* info, int port) {
     const uint8_t* p = info + 0x60 + 0x24 * port;
     return p[1] != 3 ? (int)(int8_t)p[0] : -1; /* slot type 3: nobody */
+}
+
+/* Why a header's stage or players are not ones this game has (a damaged
+ * dump, or another build under MELEE_WATCH_IGNORE_REV), NULL when they are.
+ * The match setup indexes the character, costume and stage tables with
+ * them, and the forced stage select takes the stage as an s8. */
+static const char* info_unplayable(const uint8_t* info) {
+    const unsigned stage = info_stage(info);
+    if (stage <= St_Kind_Test || stage > St_Kind_Heal) {
+        return "an unknown stage";
+    }
+    for (int port = 0; port < 6; port++) {
+        const uint8_t* p = info + 0x60 + 0x24 * port;
+        const uint8_t ckind = p[0], slot_type = p[1], color = p[3];
+        if (slot_type == Gm_PKind_NA) {
+            continue;
+        }
+        if (slot_type > Gm_PKind_Boss) {
+            return "an unknown player kind";
+        }
+        if (ckind >= CKind_Playable_Count) {
+            return "an unknown character";
+        }
+        if (color >= gm_GetNumCostumesForCKind(ckind)) {
+            return "a costume its character does not have";
+        }
+    }
+    return NULL;
 }
 
 static void log_match(const char* what, const WatchHeader* h) {
@@ -1140,6 +1171,8 @@ static void vm_header_done(ViewMatch* vm, uint64_t now) {
         why = "another build";
     } else if (strcmp(h->disc, s_my_disc) != 0) {
         why = "another disc image";
+    } else {
+        why = info_unplayable(h->info);
     }
     if (why != NULL) {
         vm->refused = true;
