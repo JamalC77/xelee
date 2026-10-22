@@ -273,6 +273,11 @@ bool gmOnline_SlippiFlow(void)
  * records, which are the host's. */
 static PcWatchMatch watch_match; /* the match the lobby took */
 static bool watch_have_match;
+/* B on the waiting screen counts once B has been up there: the B still held
+ * from leaving a match (held 1 s; the match's last tick left the host's
+ * buttons as the previous ones, so it reads as a new press) or held as a
+ * match ends must not unsubscribe. */
+static bool watch_back_armed;
 #endif
 
 void gmOnline_SetKind(OnlineKind kind)
@@ -1774,6 +1779,7 @@ void gm_Scene_OnlineLobby_OnEnter(UNUSED void* unused)
          * already up when the lobby comes back after a match. */
         mnOnlineLobby_Create();
         pc_watch_client_start();
+        watch_back_armed = false;
         return;
     }
 #endif
@@ -1959,7 +1965,10 @@ static void watchLobbyFrame(OnlineLobbyView* view, u64 input)
         gm_801A4B60(); /* onExitLobby: on to the forced stage select */
         return;
     }
-    if (input & (HSD_PAD_B | PAD_CANCEL)) {
+    if (!(gm_GetButtonsPressed(PAD_MAX_CONTROLLERS) & (HSD_PAD_B | PAD_CANCEL))) {
+        watch_back_armed = true;
+    }
+    if (watch_back_armed && (input & (HSD_PAD_B | PAD_CANCEL))) {
         sfxBack();
         pc_watch_client_stop();
         gm_ChangeGameModeAfterCurrentScene(GM_MENU);
