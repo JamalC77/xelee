@@ -94,6 +94,11 @@ jobs:
           sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
           sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
 
+      - name: Patch aurora for the desktop build
+        # The pinned aurora only builds with OpenXR and not under MinGW; the
+        # patch says why. The Quest job builds aurora unpatched.
+        run: git -C extern/aurora apply "${GITHUB_WORKSPACE}/tools/aurora-desktop.patch"
+
       - name: Build and package
         env:
           TARGET_ARCH: x86_64

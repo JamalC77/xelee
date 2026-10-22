@@ -1,0 +1,35 @@
+Aurora fixes the watch branch's Windows desktop zip needs (.github/workflows/watch.yml
+applies this to extern/aurora before tools/package_windows.sh). Aurora 51cc8cd does
+not build there:
+
+- command_processor.cpp sets sXrStill (aurora_xr_world_still) outside the OpenXR
+  block that declares it, so no build without OpenXR compiles.
+- gpu.cpp calls dawn::native::GetTogglesUsed, which the MinGW link does not find in
+  the Dawn package (gpu.cpp already leaves Dawn's native instance setup out under
+  MinGW).
+
+diff --git a/lib/gx/command_processor.cpp b/lib/gx/command_processor.cpp
+--- a/lib/gx/command_processor.cpp
++++ b/lib/gx/command_processor.cpp
+@@ -2514,7 +2514,9 @@ void handle_aurora(ByteReader& reader) noexcept {
+     } else if (category == 5 || category == 7 || category == 8) { // planes 3-4, 5-6, 7-8
+       gfx::xr_set_world_clip_more(category == 5 ? 1 : category - 5, view.data());
+     } else if (category == 9) { // aurora_xr_world_still
++#if defined(AURORA_ENABLE_OPENXR) && !defined(__EMSCRIPTEN__)
+       sXrStill = hasView;
++#endif
+     } else {
+       const auto cat = category <= 2 ? static_cast<gfx::XrCategory>(category)
+                        : category == 6 ? gfx::XrCategory::Hidden // AURORA_XR_HIDDEN
+diff --git a/lib/webgpu/gpu.cpp b/lib/webgpu/gpu.cpp
+--- a/lib/webgpu/gpu.cpp
++++ b/lib/webgpu/gpu.cpp
+@@ -1143,7 +1143,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
+ #ifndef __EMSCRIPTEN__
+     g_device.SetLoggingCallback(wgpu_log);
+ #endif
+-#if defined(WEBGPU_DAWN) && !defined(__EMSCRIPTEN__)
++#if defined(WEBGPU_DAWN) && !defined(__EMSCRIPTEN__) && !defined(__MINGW32__)
+     if (const char* v = std::getenv("AURORA_DAWN_VALIDATION"); v != nullptr && v[0] == '1') {
+       std::string used;
+       for (const char* t : dawn::native::GetTogglesUsed(g_device.Get()))

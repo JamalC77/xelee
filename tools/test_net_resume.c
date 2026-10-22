@@ -407,6 +407,11 @@ void replay_feed(PADStatus* head) {
 void pc_slp_play_feed(PADStatus* head) {
     (void)head;
 }
+/* pad_rumble.c: no motors here (pc_net_rumble_command) */
+void pc_pad_rumble_command(unsigned port, unsigned command) {
+    (void)port;
+    (void)command;
+}
 /* net_watch.c: Xelee Watch's hooks in the tick; no match is shared or
  * watched in this harness. */
 bool pc_watch_live(void) {

@@ -113,7 +113,7 @@ bool pc_net_send_reliable(uint8_t type, const void* payload, int len) {
 
 /* net_handshake.c branches to the Slippi transport for its setup message. This
  * fixture drives the custom handshake, so the Slippi path is inactive; the
- * other two stubs exist only to satisfy the link. */
+ * other stubs exist only to satisfy the link. */
 bool pc_net_slippi_active(void) {
     return false;
 }
@@ -124,6 +124,9 @@ bool pc_net_slippi_send_setup(uint32_t seed, int32_t start_frame) {
 }
 int pc_net_slippi_conn_state(void) {
     return 0;
+}
+bool pc_net_slippi_setup_host(void) {
+    return false;
 }
 /* slp_play.c: no Slippi replay plays back here (MELEE_SLP_PLAY) */
 bool pc_slp_play_active(void) {
