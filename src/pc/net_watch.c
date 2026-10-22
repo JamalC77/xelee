@@ -1976,10 +1976,12 @@ void pc_watch_status(PcWatchStatus* out) {
     const uint8_t refused = s_refused;
     const bool have_status = s_have_status;
     const WatchStatus st = s_host_status;
+    /* The host's live match is one we are about to play (not one played,
+     * or left, already). */
     bool ours = false;
     for (int i = 0; i < VIEW_SLOTS; i++) {
-        ours = ours || (s_vm[i].used && !s_vm[i].orphaned && s_vm[i].seq == st.match_seq &&
-                           s_vm[i].have_header);
+        ours = ours || (s_vm[i].used && !s_vm[i].orphaned && !s_vm[i].played &&
+                           s_vm[i].seq == st.match_seq && s_vm[i].have_header);
     }
     char host[WATCH_NAME_LEN + 1];
     snprintf(host, sizeof host, "%s", s_host_name);
@@ -2206,8 +2208,10 @@ static void viewer_match_end(void) {
     pc_log_line("watch: match %u done: %d frames, %u mismatches; %s", (unsigned)seq, (int)s_next,
         s_mismatches, how);
     s_matches_done++;
-    s_after_match = true;
-    s_last_diverged = s_mismatches > 0;
+    /* Left with B, no GAME! happened here: the waiting screen tells what
+     * the host is doing instead. */
+    s_after_match = !s_leaving;
+    s_last_diverged = !s_leaving && s_mismatches > 0;
 }
 
 void pc_watch_match_end(void) {
