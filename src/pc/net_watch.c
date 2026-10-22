@@ -842,15 +842,30 @@ static void host_on_hello(
             gone_name, gone_at, h.name, at);
     }
     if (reason != WATCH_REFUSE_NONE) {
+        /* A viewer's repeats of one HELLO once, and at most one line per
+         * few seconds whatever the nonces: HELLOs are cheap to send, and
+         * the log is a file on the headset. */
         static uint32_t logged_nonce;
-        if (logged_nonce != h.nonce) {
+        static uint64_t logged_ns;
+        static unsigned suppressed;
+        if (h.nonce != logged_nonce && logged_ns != 0 &&
+            now - logged_ns < REFUSED_HELLO_EVERY_NS)
+        {
+            suppressed++;
+        } else if (h.nonce != logged_nonce) {
+            char more[48] = "";
+            if (suppressed > 0) {
+                snprintf(more, sizeof more, "; %u other refusals before it", suppressed);
+            }
             logged_nonce = h.nonce;
-            pc_log_line("watch: refused %s (%s): %s (theirs rev %s disc %s, ours rev %s disc %s)",
+            logged_ns = now;
+            suppressed = 0;
+            pc_log_line("watch: refused %s (%s): %s (theirs rev %s disc %s, ours rev %s disc %s)%s",
                 h.name, at,
                 reason == WATCH_REFUSE_REV  ? "another build" :
                 reason == WATCH_REFUSE_DISC ? "another disc image" :
                                               "no free viewer slot",
-                h.rev, h.disc, s_my_rev, s_my_disc);
+                h.rev, h.disc, s_my_rev, s_my_disc, more);
         }
     }
 }
