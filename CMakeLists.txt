@@ -353,6 +353,10 @@ set(PC_SOURCES
         src/pc/net_sim.c
         src/pc/net_snapshot.c
         src/pc/net_sync.c
+        # Xelee Watch: a nearby headset plays the match from this one's inputs
+        # (spectator-spec.md); net_watch_wire.c is its pure wire codec.
+        src/pc/net_watch.c
+        src/pc/net_watch_wire.c
         src/pc/net_watchdog.c
         src/pc/net_wire.c
         # The GameCube's own trig: platform libm differs by an ULP between

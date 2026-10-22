@@ -30,6 +30,7 @@ extern void browser_yield(void);
 #include "pc/xr_scene.h"
 #include "pc/widescreen.h"
 #include "pc/net.h"
+#include "pc/net_watch.h"
 #include "pc/slp.h"
 #include "pc/net_chat.h"
 #include <melee/if/ifnetchat.h>
@@ -153,6 +154,8 @@ void pc_frame_boundary(void) {
      * splash) is serviced every frame, whatever scene is up, so the peer
      * never times it out. A no-op with no link. */
     pc_net_slippi_link_pump();
+    /* Xelee Watch: sharing starts here once a disc is open (net_watch.c). */
+    pc_watch_service();
 #ifdef __EMSCRIPTEN__
     extern void pc_audio_pump(void);
     pc_audio_pump();

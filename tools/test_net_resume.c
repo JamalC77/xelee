@@ -407,6 +407,29 @@ void replay_feed(PADStatus* head) {
 void pc_slp_play_feed(PADStatus* head) {
     (void)head;
 }
+/* net_watch.c: Xelee Watch's hooks in the tick; no match is shared or
+ * watched in this harness. */
+bool pc_watch_live(void) {
+    return false;
+}
+bool pc_watch_viewing(void) {
+    return false;
+}
+bool pc_watch_scene_hold(int32_t net_frame) {
+    (void)net_frame;
+    return false;
+}
+void pc_watch_feed(PADStatus* head) {
+    (void)head;
+}
+void pc_watch_compare(uint32_t ck) {
+    (void)ck;
+}
+void pc_watch_tx_frame(const PADStatus* head, uint32_t ck, int32_t net_frame) {
+    (void)head;
+    (void)ck;
+    (void)net_frame;
+}
 void record_frame(const PADStatus* head, uint32_t ck, int32_t f) {
     (void)head;
     (void)ck;

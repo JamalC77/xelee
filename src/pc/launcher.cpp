@@ -2403,13 +2403,21 @@ extern "C" bool pc_is_custom_textures_enabled(void) {
     return prefs.custom_textures;
 }
 extern "C" bool pc_net_rules(bool* unlock_all, bool* frozen_stadium);
+extern "C" bool pc_watch_rules(bool* unlock_all, bool* frozen_stadium); /* src/pc/net_watch.h */
 extern "C" bool pc_slp_play_frozen_stadium(bool* frozen); /* src/pc/slp.h */
 extern "C" bool pc_is_unlock_all_enabled(void) {
     bool unlock_all, frozen;
+    /* Watching: the host's, for the match it shares (src/pc/net_watch.c). */
+    if (pc_watch_rules(&unlock_all, &frozen)) {
+        return unlock_all;
+    }
     return pc_net_rules(&unlock_all, &frozen) ? unlock_all : prefs.unlock_all;
 }
 extern "C" bool pc_is_frozen_stadium_enabled(void) {
     bool unlock_all, frozen;
+    if (pc_watch_rules(&unlock_all, &frozen)) {
+        return frozen;
+    }
     if (pc_net_rules(&unlock_all, &frozen)) {
         return frozen;
     }

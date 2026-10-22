@@ -1,6 +1,7 @@
 #include "gmscene.h"
 #ifdef TARGET_PC
 #include "pc/net.h"
+#include "pc/net_watch.h"
 #include "pc/pc.h"
 #include "pc/slp.h"
 #include "pc/stage_ambience.h"
@@ -420,8 +421,11 @@ void gm_801A4D34(void (*on_frame)(void), GameSceneInfo* info)
         }
 
 #ifdef TARGET_PC
+        /* The session is gone, or the watched host is and nothing of its
+         * match is left to play (src/pc/net_watch.h). */
         if (gm_GetCurrentGameMode() == GM_ONLINE &&
-            pc_net_peer_status() != PC_NET_PEER_OK &&
+            (pc_net_peer_status() != PC_NET_PEER_OK ||
+             (pc_watch_viewing() && pc_watch_lost())) &&
             info != NULL && info->scene_kind != GS_ONLINE_LOBBY) {
             s_scene_end_held = 0;
             temp_r25->unk_C = 1;
@@ -434,6 +438,16 @@ void gm_801A4D34(void (*on_frame)(void), GameSceneInfo* info)
          * not ticked, while the player places the stage (src/pc/xr_place.h). */
         if (pc_xr_place_hold()) {
             pad_queue_count = 0;
+        }
+        /* Watching: a pass with no host frame to run draws without ticking,
+         * like the placement hold, and the scene ends once the host's match
+         * has and every frame of it has run (src/pc/net_watch.h). */
+        if (pc_watch_hold()) {
+            pad_queue_count = 0;
+            if (pc_watch_end_scene_now()) {
+                temp_r25->unk_C = s_scene_end_held != 0 ? s_scene_end_held : 1;
+                s_scene_end_held = 0;
+            }
         }
         /* One tick per render offline too, as netplay already does
          * (src/pc/net_sync.c pad_queue_pin). The loop below runs one tick per

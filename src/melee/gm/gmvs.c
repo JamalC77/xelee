@@ -58,6 +58,7 @@
 #ifdef TARGET_PC
 #include "pc/slp.h"
 #include "pc/net.h"
+#include "pc/net_watch.h"
 #include "pc/pc.h"
 #include <sysdolphin/baselib/random.h>
 #endif
@@ -2332,6 +2333,9 @@ void fn_8016E730(StartMeleeData* arg0)
 
 #ifdef TARGET_PC
     slippiMatchInit(); /* Slippi's InitOnlinePlay precedes SendGameInfo */
+    /* Xelee Watch: the host takes the match header here, the viewer writes
+     * it over arg0, before any of the setup below draws (src/pc/net_watch.h). */
+    pc_watch_match_start(arg0);
     pc_slp_match_start(arg0); /* Slippi's SendGameInfo hooks here too */
 #endif
     db_Setup();
@@ -2437,6 +2441,7 @@ void gm_Scene_Vs_OnExit(void* user_data)
 
 #ifdef TARGET_PC
     pc_slp_match_end();
+    pc_watch_match_end();
 #endif
     if (controller.state.match_over == 0) {
         data->xC = controller.state.x24C;

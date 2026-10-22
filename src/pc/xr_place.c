@@ -5,6 +5,7 @@
 #ifdef AURORA_ENABLE_OPENXR
 
 #include "pc/net.h"
+#include "pc/net_watch.h"
 #include "pc/pc.h"
 
 #include <SDL3/SDL.h>
@@ -228,8 +229,11 @@ bool pc_xr_place_hold(void) {
         /* Only with a headset already presenting: an XR build playing flat
          * (no runtime, no session yet) never waits for one. Netplay: the
          * peer starts the match on the agreed frame whatever this side
-         * shows, so the stage keeps its default placement. */
-        if (!s_dummy && (!enabled() || !aurora_xr_active() || pc_net_active())) {
+         * shows, so the stage keeps its default placement. Watching: the
+         * host's match runs on, and the stage can be moved at any time. */
+        if (!s_dummy &&
+            (!enabled() || !aurora_xr_active() || pc_net_active() || pc_watch_viewing()))
+        {
             return false;
         }
         /* Sudden Death: the fight just played, on the stage just placed. */

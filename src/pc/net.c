@@ -31,6 +31,7 @@
 #include "pc/slp.h"
 #include "pc/net_internal.h"
 #include "pc/net_sfx.h"
+#include "pc/net_watch.h"
 #include "pc/slippi/slp_adapter.h"
 #include "pc/slippi/slp_checksum.h"
 
@@ -1904,12 +1905,13 @@ bool pc_net_active(void) {
 }
 
 /* True when this run's simulation has to be reproducible on another machine:
- * a netplay session, a recording, a replay, or a sync test. Game code uses
- * it to suppress the handful of retail behaviours that are deliberately
- * seeded from the local machine (see gmTitle_801A165C). Offline play keeps
- * every one of them. */
+ * a netplay session, a recording, a replay, a sync test, or a match shared
+ * with or watched from another headset (net_watch.c). Game code uses it to
+ * suppress the handful of retail behaviours that are deliberately seeded
+ * from the local machine (see gmTitle_801A165C). Offline play keeps every
+ * one of them. */
 bool pc_net_deterministic(void) {
-    return net.active || record_active() || net.synctest;
+    return net.active || record_active() || net.synctest || pc_watch_live();
 }
 
 int pc_net_local_player(void) {
@@ -2005,6 +2007,11 @@ bool pc_net_scene_hold(void) {
         return false; /* scenes end locally; only the match frames are synced */
     }
     if (!net.active) {
+        /* Watching: the scene ends where the host's did, whenever this
+         * run's own code asks to (net_watch.c). */
+        if (pc_watch_viewing()) {
+            return pc_watch_scene_hold(net.frame);
+        }
         /* Replaying a netplay recording: the scene has to end where the
          * recorded pair agreed, not where this run's own code asks to. */
         return record_replay_scene_hold(net.frame);
@@ -2924,14 +2931,16 @@ bool pc_net_sfx_on(void) {
         const char* e = getenv("MELEE_NET_SFX_LOG");
         s_sfx_off = e != NULL && strcmp(e, "off") == 0;
     }
-    return s_sfx_off == 0 && net.active;
+    /* A watched match too: the handles stand in for a voice pool each
+     * device has its own of, and the frame numbers in them agree. */
+    return s_sfx_off == 0 && (net.active || pc_watch_live());
 }
 
 /* A frame's simulation begins (a fresh tick or a re-run of it). */
 static void audio_journal_begin(int32_t f) {
     s_aj_i = 0;
     s_aj_on = true;
-    if (net.active) {
+    if (net.active || pc_watch_live()) {
         net_sfx_begin(f, net.resim); /* a re-run of an older frame starts a rollback */
     }
     struct AudioJournal* j = &s_aj[f & (RING - 1)];
@@ -2983,7 +2992,9 @@ bool pc_net_audio_deaf(bool* answer) {
         const char* e = getenv("MELEE_NET_AUDIO_DEAF");
         s_deaf_off = e != NULL && strcmp(e, "off") == 0;
     }
-    if (s_deaf_off != 0 || !net.active || SDL_GetCurrentThreadID() != s_game_thread) {
+    if (s_deaf_off != 0 || (!net.active && !pc_watch_live()) ||
+        SDL_GetCurrentThreadID() != s_game_thread)
+    {
         return false;
     }
     s_deaf_asks++;
@@ -3018,6 +3029,14 @@ static void audio_journal_reset(void) {
     s_aj_replays = 0;
     s_deaf_asks = 0;
     s_deaf_true = 0;
+}
+
+int32_t pc_net_watch_match_begin(int32_t first_frame, bool viewer) {
+    if (viewer && !net.active && first_frame >= 0) {
+        net.frame = first_frame;
+    }
+    audio_journal_reset();
+    return net.frame;
 }
 
 /* Only the sound path asks (axdriver.c AXDriver_8038CFF4, lbaudio_ax.c
@@ -3746,7 +3765,12 @@ static void fresh_tick(PADStatus* head, bool raw) {
         *HSD_RandSeedPtr = net.seed; /* both peers enter the match from the agreed seed */
     }
     fight_reseed(net.frame);
+    /* Watching: the host's pads and seed for this tick (net_watch.c). After
+     * the start_frame line above, which is not gated on a session, so a
+     * stale start frame cannot overwrite the host's seed. */
+    pc_watch_feed(head);
     uint32_t ck = frame_checksum(head);
+    pc_watch_compare(ck);
     s_ck_ring[net.frame & (RING - 1)] = ck;
     /* Slippi's wire checksum, taken at the same instant as ours, so the
      * desync check under Slippi compares like for like (the two formulas
@@ -3763,6 +3787,12 @@ static void fresh_tick(PADStatus* head, bool raw) {
         check_desync(); /* reports and dumps both rings on the first mismatch */
     }
     record_frame(head, ck, net.frame);
+    /* A shared match's frame for the viewers. Offline every frame is final
+     * at once; a netplay host would have to go through record_confirm's
+     * staging instead, and is not shared. */
+    if (!net.active) {
+        pc_watch_tx_frame(head, ck, net.frame);
+    }
     /* Everything the peer has acknowledged can no longer be rolled back, so
      * its staged record is final and can go to the file in frame order. */
     record_confirm(confirmed_frame());
@@ -3926,6 +3956,11 @@ void pc_net_sync(void) {
         pad_qtype_hold();   /* HSD_PadInit wipes it; the tick depends on it */
         dvd_settle();
     }
+    if (!net.active && pc_watch_live()) {
+        /* A shared or watched match: a load completes in the tick that
+         * issued it on both devices, whatever their disc speeds. */
+        dvd_settle();
+    }
     if (net.active || record_active()) {
         /* Also on the record/replay legs: a recording made with a seed that
          * drifts with the frame rate cannot replay identically anywhere,
@@ -3935,7 +3970,7 @@ void pc_net_sync(void) {
     if (net.synctest) {
         synctest_before_tick();
     }
-    if (!net.active && !record_active()) {
+    if (!net.active && !record_active() && !pc_watch_live()) {
         net.frame++;
         return;
     }

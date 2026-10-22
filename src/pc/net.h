@@ -161,6 +161,14 @@ uint64_t pc_net_pace_adjust_ns(void);
  * skipping the sleep. The rest is dropped. */
 uint64_t pc_net_catch_up_ns(uint64_t late_ns);
 
+/* Xelee Watch (src/pc/net_watch.c): a shared (host) or watched (viewer) match
+ * starts with the next tick. The viewer's frame counter takes the host's
+ * `first_frame`, so the frame numbers the sound log puts in its handles
+ * (net_sfx.c) agree on the two devices; the host keeps its own. The sound log
+ * starts over either way. Returns the frame number of the match's first tick
+ * (net.frame here: pc_net_frame() is the last netplay tick's, stale offline). */
+int32_t pc_net_watch_match_begin(int32_t first_frame, bool viewer);
+
 /* True while re-simulating: sound/music/rumble starts must be suppressed. */
 bool pc_net_resim(void);
 /* Reconcile physical motors after rollback; hardware state is not snapshotted. */

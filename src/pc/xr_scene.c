@@ -4,6 +4,7 @@
 
 #ifdef AURORA_ENABLE_OPENXR
 
+#include "pc/net_watch.h"
 #include "pc/pc.h"
 #include "pc/xr_place.h"
 
@@ -1123,8 +1124,11 @@ void pc_xr_world_camera(const float view[3][4]) {
         pc_xr_mono_camera();
         return;
     }
-    /* Pause flags 1 and 2: a player paused the match (gm_DoPauseChecksAndRoutine). */
-    aurora_xr_set_paused(gm_GetDbPauseFlag(1) || gm_GetDbPauseFlag(2) || gm_vs_soft_paused());
+    /* Pause flags 1 and 2: a player paused the match (gm_DoPauseChecksAndRoutine).
+     * A watched match counts as paused: the stage can be grabbed and moved at
+     * any time, and the controllers do nothing to the match (net_watch.h). */
+    aurora_xr_set_paused(
+        gm_GetDbPauseFlag(1) || gm_GetDbPauseFlag(2) || gm_vs_soft_paused() || pc_watch_viewing());
     s_category = AURORA_XR_WORLD;
     aurora_xr_camera(AURORA_XR_WORLD, view);
     follow_update();

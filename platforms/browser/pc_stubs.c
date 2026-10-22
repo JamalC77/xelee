@@ -11,10 +11,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "pc/file_cache.h"
+#include "pc/net_watch.h"
 #include "pc/pc.h"
 #include "pc/slp.h"
 
@@ -152,4 +154,70 @@ void pc_slp_info_from_start(
 void pc_slp_start_from_info(struct StartMeleeData* start, const uint8_t in[0x138]) {
     (void)start;
     (void)in;
+}
+
+/* Xelee Watch (net_watch.c) runs a UDP socket on a thread of its own; the
+ * browser neither shares its matches nor watches another's. */
+void pc_watch_service(void) {}
+void pc_watch_set_share(bool on) {
+    (void)on;
+}
+void pc_watch_match_start(struct StartMeleeData* start) {
+    (void)start;
+}
+void pc_watch_match_end(void) {}
+bool pc_watch_live(void) {
+    return false;
+}
+bool pc_watch_viewing(void) {
+    return false;
+}
+void pc_watch_tx_frame(const struct PADStatus* head, uint32_t ck, int32_t net_frame) {
+    (void)head;
+    (void)ck;
+    (void)net_frame;
+}
+bool pc_watch_hold(void) {
+    return false;
+}
+bool pc_watch_end_scene_now(void) {
+    return false;
+}
+void pc_watch_feed(struct PADStatus* head) {
+    (void)head;
+}
+void pc_watch_compare(uint32_t ck) {
+    (void)ck;
+}
+bool pc_watch_scene_hold(int32_t net_frame) {
+    (void)net_frame;
+    return false;
+}
+bool pc_watch_lost(void) {
+    return false;
+}
+void pc_watch_client_start(void) {}
+void pc_watch_client_stop(void) {}
+bool pc_watch_subscribe(const char* ip, uint16_t port) {
+    (void)ip;
+    (void)port;
+    return false;
+}
+void pc_watch_status(PcWatchStatus* out) {
+    memset(out, 0, sizeof *out);
+    snprintf(out->message, sizeof out->message, "Watch is not available in the browser");
+    out->error = true;
+}
+bool pc_watch_take_match(PcWatchMatch* m) {
+    (void)m;
+    return false;
+}
+void pc_watch_pin_rules(const PcWatchMatch* m) {
+    (void)m;
+}
+void pc_watch_unpin_rules(void) {}
+bool pc_watch_rules(bool* unlock_all, bool* frozen_stadium) {
+    (void)unlock_all;
+    (void)frozen_stadium;
+    return false;
 }

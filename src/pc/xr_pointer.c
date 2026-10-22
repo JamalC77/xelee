@@ -5,6 +5,7 @@
 #ifdef AURORA_ENABLE_OPENXR
 
 #include "pc/net.h"
+#include "pc/net_watch.h"
 #include "pc/widescreen.h"
 
 #include <SDL3/SDL.h>
@@ -86,15 +87,16 @@ u16 pc_xr_pointer_frame(const PADStatus* pad)
     u16 back = 0;
     ++s_frame;
     /* The Back button beside the screen's bar (hands), or the right mouse
-     * button standing in for it. */
-    if (!pc_net_active() &&
-        (aurora_xr_screen_back() ||
-         (mouse_on() && (SDL_GetGlobalMouseState(NULL, NULL) & SDL_BUTTON_RMASK))))
+     * button standing in for it. Neither in a watched match, whose pads are
+     * the host's (src/pc/net_watch.h); its waiting screen still has them. */
+    const bool off = pc_net_active() || pc_watch_viewing();
+    if (!off && (aurora_xr_screen_back() ||
+                    (mouse_on() && (SDL_GetGlobalMouseState(NULL, NULL) & SDL_BUTTON_RMASK))))
     {
         back = PAD_BUTTON_B;
     }
-    s_valid = !pc_net_active() && (aurora_xr_screen_pointer(&x, &y, &pressed) ||
-                                   mouse_pointer(&x, &y, &pressed));
+    s_valid =
+        !off && (aurora_xr_screen_pointer(&x, &y, &pressed) || mouse_pointer(&x, &y, &pressed));
     if (!s_valid) {
         s_pressed = s_armed = false;
         return back;

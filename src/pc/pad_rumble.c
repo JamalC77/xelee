@@ -16,6 +16,7 @@
  */
 #include "pc/pc.h"
 #include "pc/net.h"
+#include "pc/net_watch.h"
 
 #ifdef AURORA_ENABLE_OPENXR
 #include <aurora/xr.h>
@@ -123,6 +124,12 @@ void pc_pad_rumble_engaged(unsigned engaged) {
 }
 
 void pc_pad_rumble_command(unsigned port, unsigned command) {
+    /* A watched match rumbles nothing here: its players are the host's. The
+     * simulation keeps their rumble flags (they are the host's state); only
+     * the motors stay still, and a stop still gets through. */
+    if (command == PAD_MOTOR_RUMBLE && pc_watch_viewing()) {
+        return;
+    }
     if (pc_net_active()) {
         if ((int)port != pc_net_local_player())
             return;
