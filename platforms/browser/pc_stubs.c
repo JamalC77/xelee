@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "pc/file_cache.h"
 #include "pc/pc.h"
@@ -141,4 +142,14 @@ void pc_slp_play_feed(struct PADStatus* head) {
 void pc_slp_play_match_end(void) {}
 void pc_slp_play_tick_end(bool fight_frame) {
     (void)fight_frame;
+}
+void pc_slp_info_from_start(
+    uint8_t out[0x138], const struct StartMeleeData* data, bool resolve_alt) {
+    (void)data;
+    (void)resolve_alt;
+    memset(out, 0, 0x138);
+}
+void pc_slp_start_from_info(struct StartMeleeData* start, const uint8_t in[0x138]) {
+    (void)start;
+    (void)in;
 }

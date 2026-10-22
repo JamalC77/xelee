@@ -10,6 +10,7 @@
 #ifndef PC_SLP_H
 #define PC_SLP_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -18,6 +19,17 @@ extern "C" {
 
 struct HSD_GObj;
 struct StartMeleeData;
+
+/* StartMeleeData as Slippi's 0x138-byte Game Info Block and back
+ * (slp_format.h's layout). Xelee Watch's match header carries it
+ * (src/pc/net_watch.c). `resolve_alt` records the character that starts
+ * when A is held on Zelda or Sheik, as the .slp writer does; without it the
+ * block holds the character picked, which the match setup then resolves
+ * itself. The callback pointers are not carried, and decoding leaves them as
+ * they were. */
+void pc_slp_info_from_start(
+    uint8_t out[0x138], const struct StartMeleeData* data, bool resolve_alt);
+void pc_slp_start_from_info(struct StartMeleeData* start, const uint8_t in[0x138]);
 
 /* A VS or Sudden Death scene is being set up (gmvs.c fn_8016E730, where
  * Slippi's SendGameInfo hooks): opens a file if this match is recorded. */

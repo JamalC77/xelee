@@ -147,7 +147,8 @@ static HSD_GObj* fighter_gobj(int port, bool follower) {
 
 /* ---- match start: Event Payloads and Game Start ----------------------- */
 
-static void build_info(SlpInfoBlock* b, const StartMeleeData* d) {
+/* The block as the match data holds it: each port's picked character. */
+static void build_info_raw(SlpInfoBlock* b, const StartMeleeData* d) {
     const StartMeleeRules* r = &d->rules;
     memset(b, 0, sizeof *b);
     b->match_kind = (uint8_t)r->match_kind;
@@ -206,6 +207,13 @@ static void build_info(SlpInfoBlock* b, const StartMeleeData* d) {
         o->attack_ratio = p->attack_ratio;
         o->defense_ratio = p->defense_ratio;
         o->model_scale = p->model_scale;
+    }
+}
+
+static void build_info(SlpInfoBlock* b, const StartMeleeData* d) {
+    build_info_raw(b, d);
+    for (int i = 0; i < 6; i++) {
+        const PlayerInitData* p = &d->players[i];
         /* Holding A as the match loads starts Zelda as Sheik and Sheik as
          * Zelda. The block records the character that starts, the rule
          * gmvs.c fn_8016D8AC applies right after this hook (Slippi's
@@ -213,10 +221,21 @@ static void build_info(SlpInfoBlock* b, const StartMeleeData* d) {
         if (p->slot_type == Gm_PKind_Human && (p->ckind == CKind_Zelda || p->ckind == CKind_Seak)) {
             const int pid = p->slot == 0 ? i : p->slot - 1;
             if (HSD_PadCopyStatus[(u8)pid].button & HSD_PAD_A) {
-                o->ckind = p->ckind == CKind_Zelda ? CKind_Seak : CKind_Zelda;
+                b->players[i].ckind = p->ckind == CKind_Zelda ? CKind_Seak : CKind_Zelda;
             }
         }
     }
+}
+
+void pc_slp_info_from_start(
+    uint8_t out[SLP_INFO_BLOCK_SIZE], const StartMeleeData* data, bool resolve_alt) {
+    SlpInfoBlock b;
+    if (resolve_alt) {
+        build_info(&b, data);
+    } else {
+        build_info_raw(&b, data);
+    }
+    slp_info_block(out, &b);
 }
 
 static bool recorded_mode(void) {

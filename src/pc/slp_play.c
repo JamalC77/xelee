@@ -612,12 +612,9 @@ bool pc_slp_play_frozen_stadium(bool* frozen) {
 
 #define BIT(v, n) (((v) >> (n)) & 1)
 
-void pc_slp_play_setup(struct StartMeleeData* start) {
-    if (!pc_slp_play_active()) {
-        return;
-    }
+void pc_slp_start_from_info(struct StartMeleeData* start, const uint8_t in[SLP_INFO_BLOCK_SIZE]) {
     SlpInfoBlock b;
-    slp_info_parse(P.info, &b);
+    slp_info_parse(in, &b);
     StartMeleeRules* r = &start->rules;
     r->match_kind = b.match_kind;
     r->x0_3 = b.x0_3;
@@ -683,6 +680,14 @@ void pc_slp_play_setup(struct StartMeleeData* start) {
         p->defense_ratio = o->defense_ratio;
         p->model_scale = o->model_scale;
     }
+}
+
+void pc_slp_play_setup(struct StartMeleeData* start) {
+    if (!pc_slp_play_active()) {
+        return;
+    }
+    pc_slp_start_from_info(start, P.info);
+    StartMeleeRules* r = &start->rules;
     /* A replay holds no paused frames (Slippi records fight frames only),
      * so the frame after a pause is the first one unpaused: played back
      * with pausing on, the Start that paused it would pause this game for
