@@ -1,0 +1,184 @@
+name: Watch
+
+# Xelee Watch (spectator-spec.md), the fork's builds: on a push to the watch
+# branch, or by hand. The unit tests, the Windows desktop zip (two windows on
+# one PC are the quickest test of a shared match) and the Quest APK. Nothing
+# is released; the builds stay with the run as artifacts. The Windows zip and
+# the APK carry the same version, v0.1.0-watch.<run number>: devices on two
+# different builds refuse each other (pc_app_rev(), src/pc/net_watch.c).
+on:
+  push:
+    branches: [watch]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Unit tests (${{ matrix.build_type }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, RelWithDebInfo]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          # No packaging tools here: the test targets only link aurora::dvd,
+          # aurora::main, OpenSSL and curl. aurora still builds SDL3 from
+          # source (not in Ubuntu 24.04), so its X11/Wayland/audio deps are
+          # needed to configure and link.
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ninja-build cmake pkg-config python3 \
+            libssl-dev libcurl4-openssl-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libxfixes-dev libxss-dev libxkbcommon-dev libxtst-dev \
+            libwayland-dev wayland-protocols libdecor-0-dev \
+            libasound2-dev libpulse-dev libdbus-1-dev libudev-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgbm-dev \
+            libusb-1.0-0-dev
+
+      - name: Configure
+        # Same dependency providers as tools/package_linux.sh: prebuilt Dawn
+        # and nod keep this job from building Rust/Dawn from source just to
+        # link aurora::main.
+        run: |
+          cmake -B build-tests-${{ matrix.build_type }} -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DAURORA_SDL3_PROVIDER=vendor \
+            -DAURORA_DAWN_PROVIDER=package \
+            -DAURORA_NOD_PROVIDER=package
+
+      - name: Build unit tests
+        # Only the unit_tests target (watch_wire_test among them): the game
+        # and launcher stay unbuilt.
+        run: ninja -C build-tests-${{ matrix.build_type }} unit_tests
+
+      - name: Run unit tests
+        # The python-driven tests (tools/net_test_support.py) look for the
+        # build in ./build unless told otherwise, and this job builds into
+        # build-tests-<type>.
+        env:
+          MELEE_TEST_BUILD: ${{ github.workspace }}/build-tests-${{ matrix.build_type }}
+        run: ctest --test-dir build-tests-${{ matrix.build_type }} -L melee --output-on-failure
+
+  windows:
+    name: Windows (x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build cmake zip cabextract curl
+
+      - name: Install MinGW-w64 toolchain
+        run: |
+          sudo apt-get install -y --no-install-recommends mingw-w64
+          # aurora's C++20 code needs std::thread, which only the POSIX
+          # threading model provides; Ubuntu defaults some links to win32.
+          sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+          sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+
+      - name: Build and package
+        env:
+          TARGET_ARCH: x86_64
+          MELEE_VERSION: v0.1.0-watch.${{ github.run_number }}
+        run: tools/package_windows.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: dist/Melee-Windows-x86_64.zip
+          if-no-files-found: error
+
+  quest:
+    name: Quest APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 3G
+      # Dawn and the other C/C++ targets; the decomp keeps its own launcher
+      # (tools/gcc_launcher.py, the aarch64 GCC).
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          # The decomp needs scalar_storage_order, which the NDK's Clang does
+          # not implement, so tools/gcc_launcher.py routes melee_game through
+          # this cross compiler with the NDK sysroot.
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build cmake ccache gcc-aarch64-linux-gnu
+          # nod has no Android prebuilt, so aurora builds it from Rust source.
+          rustup target add aarch64-linux-android
+          # r26 for the game (newer NDK libc++ has no std::jthread), r29 for
+          # Dawn, which tools/build_android.sh picks up by itself.
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --install \
+            'ndk;26.3.11579264' 'ndk;29.0.14206865' > /dev/null
+
+      - name: Dawn's pinned commit
+        id: dawn
+        run: echo "ref=$(sed -n 's/.*MELEE_DAWN_REF:-\([0-9a-f]*\)}.*/\1/p' tools/build_android.sh)" >> "$GITHUB_OUTPUT"
+
+      # Dawn from source (the melee-xr fork) with its dependencies: fetched
+      # once per pinned commit.
+      - uses: actions/cache@v4
+        with:
+          path: build/dawn-src
+          key: dawn-src-${{ steps.dawn.outputs.ref }}
+
+      - uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: quest-ccache-${{ steps.dawn.outputs.ref }}-${{ github.sha }}
+          restore-keys: quest-ccache-${{ steps.dawn.outputs.ref }}-
+
+      - name: Build APK
+        env:
+          MELEE_XR: '1'
+          MELEE_VERSION: v0.1.0-watch.${{ github.run_number }}
+          MELEE_KEYSTORE_BASE64: ${{ secrets.MELEE_KEYSTORE_BASE64 }}
+          MELEE_KEYSTORE_PASSWORD: ${{ secrets.MELEE_KEYSTORE_PASSWORD }}
+          MELEE_KEY_ALIAS: ${{ secrets.MELEE_KEY_ALIAS }}
+          MELEE_KEY_PASSWORD: ${{ secrets.MELEE_KEY_PASSWORD }}
+          # Slippi's in-app login, compiled in when the secrets exist (CMakeLists.txt).
+          MELEE_SLIPPI_FIREBASE_KEY: ${{ secrets.MELEE_SLIPPI_FIREBASE_KEY }}
+          MELEE_SLIPPI_GRAPHQL_ENDPOINT: ${{ secrets.MELEE_SLIPPI_GRAPHQL_ENDPOINT }}
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/26.3.11579264"
+          export MELEE_XR_NDK_HOME="${ANDROID_HOME}/ndk/29.0.14206865"
+          ccache --zero-stats
+          tools/build_android.sh
+          ccache --show-stats
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xelee-watch-quest
+          path: dist/Xelee-Quest-arm64.apk
+          if-no-files-found: error
