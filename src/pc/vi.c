@@ -296,7 +296,7 @@ void pc_frame_boundary(void) {
         pc_net_disconnect();
         pc_lan_stop();
         pc_watch_shutdown();
-        exit(0);
+        pc_exit_now(0);
     }
 
 #ifdef __EMSCRIPTEN__
@@ -412,7 +412,8 @@ void pc_frame_boundary(void) {
                 pc_net_match_stop();
                 pc_net_disconnect();
                 pc_lan_stop();
-                exit(0);
+                pc_watch_shutdown();
+                pc_exit_now(0);
             }
             ++event;
         }

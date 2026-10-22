@@ -84,6 +84,9 @@ bool pc_is_input_hud_enabled(void);
 
 /* Set once the window is closed; the game loop is expected to exit. */
 extern bool pc_exit_requested;
+/* The frame loop's way out: an orderly shutdown, then the process ends
+ * (without C++ static destructors on Android, see main.c). */
+void pc_exit_now(int code);
 
 /* Vertex array byte sizes for aurora's GXSetArray (src/pc/vtxarray.c).
  * pc_vtx_array_scan walks a PObj's display list at load time; the size of

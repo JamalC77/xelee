@@ -359,6 +359,7 @@ static void usage(const char* argv0) {
 #include "pc/net.h"
 #include "pc/net_match.h"
 #include "pc/net_lan.h"
+#include "pc/net_watch.h"
 #include <signal.h>
 
 static void pc_shutdown_once(void) {
@@ -370,6 +371,7 @@ static void pc_shutdown_once(void) {
     pc_net_match_stop();
     pc_net_disconnect();
     pc_lan_stop();
+    pc_watch_shutdown();
     /* Stop producers before joining DMA and destroying platform resources.
      * An unjoined ARQ worker aborts in std::thread's static destructor. */
     pc_input_poll_shutdown();
@@ -378,6 +380,21 @@ static void pc_shutdown_once(void) {
     pc_textures_shutdown();
     ARQReset();
     aurora_shutdown();
+}
+
+/* Leaving from inside the frame loop (pc/vi.c). On Android, exit() also runs
+ * the C++ static destructors, and Dawn's resource table then locks a mutex
+ * its device already destroyed: SIGSEGV in FencedDeleter::DeleteWhenUnused,
+ * on every exit from a fight on Quest 3. Shut down in order, flush, and leave
+ * without the static destructors there. Other platforms keep exit(). */
+void pc_exit_now(int code) {
+#if defined(__ANDROID__)
+    pc_shutdown_once();
+    fflush(NULL);
+    _exit(code);
+#else
+    exit(code);
+#endif
 }
 
 /* SIGINT/SIGTERM only ask the loops to leave; they run the real exit path
