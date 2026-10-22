@@ -37,6 +37,8 @@
 #include "pc/net_match.h"
 #include "pc/slippi/slp_user.h"
 #include "pc/net_rank_session.h"
+#include "pc/net_watch.h"
+#include "pc/slp.h"
 #include "pc/xr_pointer.h"
 #include "pc/xr_place.h"
 extern bool pc_net_slippi_active(void);
@@ -261,6 +263,16 @@ bool gmOnline_SlippiFlow(void)
     /* The kind outlasts the mode: VS. Mode's own CSS must not be Slippi's. */
     return gm_GetCurrentGameMode() == GM_ONLINE && slippiFlow();
 }
+
+/* Xelee Watch, the viewer's side (src/pc/net_watch.h). The lobby is a
+ * waiting screen; once the host's next match header is in, it leaves for
+ * that match: the stage select with the stage forced (the Slippi path, so
+ * the game's own preloading and heap handling run), then the VS or Sudden
+ * Death scene, whose setup writes the header over the start data (gmvs.c
+ * fn_8016E730). After the match it is back to the lobby: no results, no
+ * records, which are the host's. */
+static PcWatchMatch watch_match; /* the match the lobby took */
+static bool watch_have_match;
 #endif
 
 void gmOnline_SetKind(OnlineKind kind)
@@ -281,6 +293,12 @@ OnlineKind gmOnline_GetKind(void)
 void onEnterLobby(UNUSED GameModeState* state)
 {
 #ifdef TARGET_PC
+    if (online_kind == ONLINE_KIND_WATCH) {
+        /* The watched match is over, or none was taken: our own rules,
+         * item switches and unlocks again. */
+        pc_watch_unpin_rules();
+        watch_have_match = false;
+    }
     /* Terminal sets leave Results deterministically. Keep transport alive
      * here while both peers finish signing and durable saving. */
     awaiting_rank_result = online_kind == ONLINE_KIND_RANKED &&
@@ -309,6 +327,12 @@ void onExitLobby(UNUSED GameModeState* state)
 #ifdef TARGET_PC
     if (online_kind == ONLINE_KIND_PLACE) {
         gm_SetNextGameModeStateId(state_place);
+        return;
+    }
+    if (online_kind == ONLINE_KIND_WATCH) {
+        if (watch_have_match) {
+            gm_SetNextGameModeStateId(state_sss); /* forced stage: it exits at once */
+        }
         return;
     }
     PcNetSlippiMatch m;
@@ -767,12 +791,54 @@ static void slippiPrepareMatch(const PcNetSlippiMatch* sm)
         lbAudioAx_80027168();
     }
 }
+
+/* Watch: the host's match into the private VS data, and what leaving the CSS
+ * would have done for the file and sound loading, as slippiPrepareMatch. */
+static void watchPrepareMatch(const PcWatchMatch* m)
+{
+    struct GameCache* cache = &lbDvd_GetPreloadCacheScene()->game_cache;
+    u64 mask = 0;
+    int i;
+
+    pc_slp_start_from_info(&online_vs.start, m->info);
+    for (i = 0; i < 4; i++) {
+        const PlayerInitData* p = &online_vs.start.players[i];
+        if (p->slot_type == Gm_PKind_Human || p->slot_type == Gm_PKind_Cpu) {
+            cache->entries[i].char_id = p->ckind;
+            cache->entries[i].color = p->color;
+        } else {
+            cache->entries[i].char_id = ChKind_None;
+        }
+    }
+    for (i = 0; i < GM_MAX_PLAYERS; i++) {
+        mask |= lbAudioAx_80026E84(online_vs.start.players[i].ckind);
+    }
+    lbAudioAx_80026F2C(20);
+    lbAudioAx_8002702C(4, mask);
+    lbAudioAx_80027168();
+}
+
+/* gmVsMelee_EnterVs and _EnterSuddenDeath derive the rules from GameRules;
+ * the header holds the host's as they stood when its match was set up. */
+static void watchStartRules(StartMeleeData* start, UNUSED StartMeleeData* previous)
+{
+    pc_slp_start_from_info(start, watch_match.info);
+}
 #endif
 
 void onEnterSss(GameModeState* state)
 {
 #ifdef TARGET_PC
     pc_log_line("online: enter SSS at frame %d", pc_net_frame());
+    if (online_kind == ONLINE_KIND_WATCH && watch_have_match) {
+        SSSData* sss;
+        watchPrepareMatch(&watch_match);
+        gmVsMelee_EnterSss(state, &online_vs);
+        sss = gm_GetGameModeStateEnterData(state);
+        sss->force_stage_id = (s8) watch_match.stkind;
+        sss->no_lras = true;
+        return;
+    }
     if (direct_picking) {
         /* Nothing is agreed yet: an ordinary pick, with Slippi's Frozen
          * Stadium toggle (Z) on. */
@@ -807,6 +873,15 @@ void onEnterSss(GameModeState* state)
 void onExitSss(GameModeState* state)
 {
 #ifdef TARGET_PC
+    if (online_kind == ONLINE_KIND_WATCH) {
+        gmVsMelee_ExitSss(state, &online_vs, state_lobby);
+        if (((SSSData*) gm_GetGameModeStateExitData(state))->start_game) {
+            gm_SetNextGameModeStateId(watch_match.scene_kind == GS_SUDDEN_DEATH
+                                          ? state_sudden_death
+                                          : state_vs);
+        }
+        return;
+    }
     if (direct_picking) {
         SSSData* sss = gm_GetGameModeStateExitData(state);
         bool frozen = mnStageSel_FrozenToggled();
@@ -959,6 +1034,10 @@ void onEnterVs(GameModeState* state)
     pc_log_line("online: enter VS at frame %d", pc_net_frame());
 #endif
 #ifdef TARGET_PC
+    if (online_kind == ONLINE_KIND_WATCH) {
+        gmVsMelee_EnterVs(state, &online_vs, watchStartRules, NULL);
+        return;
+    }
     PcNetSlippiMatch sm;
     if (slippiFlow() && pc_net_match_slippi_match(&sm)) {
         /* The match was built when the stage select was entered; start the
@@ -977,6 +1056,12 @@ void onEnterVs(GameModeState* state)
 void onExitVs(GameModeState* state)
 {
 #ifdef TARGET_PC
+    if (online_kind == ONLINE_KIND_WATCH) {
+        /* Back to the waiting screen. The match's stats and records are the
+         * host's: gmVsMelee_ExitVs and the writes below are skipped. */
+        gm_SetNextGameModeStateId(state_lobby);
+        return;
+    }
     if (pc_net_peer_status() != PC_NET_PEER_OK) {
         if (rankedMode()) {
             pc_rank_session_abort("peer disconnected");
@@ -1053,12 +1138,22 @@ void onExitVs(GameModeState* state)
 
 void onEnterSuddenDeath(GameModeState* state)
 {
+#ifdef TARGET_PC
+    if (online_kind == ONLINE_KIND_WATCH) {
+        gmVsMelee_EnterSuddenDeath(state, &online_vs, watchStartRules, NULL);
+        return;
+    }
+#endif
     gmVsMelee_EnterSuddenDeath(state, &online_vs, NULL, NULL);
 }
 
 void onExitSuddenDeath(GameModeState* state)
 {
 #ifdef TARGET_PC
+    if (online_kind == ONLINE_KIND_WATCH) {
+        gm_SetNextGameModeStateId(state_lobby);
+        return;
+    }
     if (pc_net_peer_status() != PC_NET_PEER_OK) {
         routeAfterFailure();
         return;
@@ -1129,8 +1224,9 @@ static void profileRefresh(void) {
     pc_rank_store_close(store);
 }
 static bool internetLobby(void) {
+    /* Not Watch's either: its lobby would start a Slippi search. */
     return online_kind != ONLINE_KIND_LAN && online_kind != ONLINE_KIND_PROFILE &&
-           online_kind != ONLINE_KIND_LOGIN &&
+           online_kind != ONLINE_KIND_LOGIN && online_kind != ONLINE_KIND_WATCH &&
            !(online_kind == ONLINE_KIND_DIRECT && getenv("MELEE_LAN_DIRECT"));
 }
 
@@ -1673,6 +1769,13 @@ void gm_Scene_OnlineLobby_OnEnter(UNUSED void* unused)
     if (online_kind == ONLINE_KIND_PLACE || unrankedPassThrough()) {
         return; /* a pass-through: to the placement scene, or on to the CSS */
     }
+    if (online_kind == ONLINE_KIND_WATCH) {
+        /* The waiting screen. The subscription outlives the lobby: it is
+         * already up when the lobby comes back after a match. */
+        mnOnlineLobby_Create();
+        pc_watch_client_start();
+        return;
+    }
 #endif
     mnOnlineLobby_Create();
 #ifdef TARGET_PC
@@ -1826,6 +1929,43 @@ static void lobbyFillView(OnlineLobbyView* view, int state, const char* why,
         pc_log_line("lobby: %s", status);
     }
 }
+
+/* Watch's waiting screen: whom it watches and what that host is doing. It
+ * leaves for the host's next match as soon as that match's header is in. */
+static void watchLobbyFrame(OnlineLobbyView* view, u64 input)
+{
+    static char last_message[ONLINE_LOBBY_MSG_LEN];
+    PcWatchStatus st;
+
+    pc_watch_status(&st);
+    memset(view, 0, sizeof *view);
+    view->title = "WATCH";
+    view->screen = LOBBY_SCREEN_PLAYERS;
+    view->phase = st.error ? LOBBY_PHASE_ERROR : LOBBY_PHASE_SEARCHING;
+    view->hint = "B: back";
+    if (st.host[0] != '\0') {
+        lobbyCopyName(view->players[0].name, st.host);
+        view->players[0].ping_ms = -1;
+        view->player_count = 1;
+    }
+    snprintf(view->message, sizeof view->message, "%s", st.message);
+    if (strcmp(view->message, last_message) != 0) {
+        snprintf(last_message, sizeof last_message, "%s", view->message);
+        pc_log_line("lobby: %s", view->message);
+    }
+    if (pc_watch_take_match(&watch_match)) {
+        watch_have_match = true;
+        pc_watch_pin_rules(&watch_match);
+        gm_801A4B60(); /* onExitLobby: on to the forced stage select */
+        return;
+    }
+    if (input & (HSD_PAD_B | PAD_CANCEL)) {
+        sfxBack();
+        pc_watch_client_stop();
+        gm_ChangeGameModeAfterCurrentScene(GM_MENU);
+        gm_801A4B60();
+    }
+}
 #endif
 
 void gm_Scene_OnlineLobby_OnFrame(void)
@@ -1860,6 +2000,11 @@ void gm_Scene_OnlineLobby_OnFrame(void)
     if (slippiFlow() && online_kind == ONLINE_KIND_DIRECT && direct_screen == DIRECT_OFF &&
         pc_net_match_is_slippi()) {
         gm_801A4B60(); /* the code is dialled: the CSS shows the rest */
+        return;
+    }
+    if (online_kind == ONLINE_KIND_WATCH) {
+        watchLobbyFrame(&view, input);
+        mnOnlineLobby_Update(&view);
         return;
     }
     if (online_kind == ONLINE_KIND_PROFILE || internetLobby()) {

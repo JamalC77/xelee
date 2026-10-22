@@ -37,7 +37,7 @@ static struct loadData load_data;
 static struct leaveData leave_data;
 
 #ifdef TARGET_PC
-/* MELEE_BOOT_SCENE=<title|vs|css|classic|adventure|allstar|homerun|training|unranked|direct|ranked|login|place|menu>: skip
+/* MELEE_BOOT_SCENE=<title|vs|css|classic|adventure|allstar|homerun|training|unranked|direct|ranked|login|place|watch|menu>: skip
  * the whole menu walk and boot into one scene with a fixed setup. Menu navigation here can only be
  * driven by synthetic input, which misses keypresses often enough that an
  * automated run cannot rely on it (see tools/smoke_test.py).
@@ -87,11 +87,16 @@ u8 pc_boot_scene(void)
         } else if (strcmp(want, "place") == 0) {
             scene = GM_ONLINE;
             gmOnline_SetKind(ONLINE_KIND_PLACE);
+        } else if (strcmp(want, "watch") == 0) {
+            /* Xelee Watch's waiting screen; MELEE_WATCH_HOST or
+             * MELEE_WATCH_FILE says what to watch (src/pc/net_watch.c). */
+            scene = GM_ONLINE;
+            gmOnline_SetKind(ONLINE_KIND_WATCH);
         } else if (strcmp(want, "menu") == 0) {
             scene = GM_MENU;
         } else {
             OSReport("MELEE_BOOT_SCENE: unknown scene '%s'; valid values are "
-                     "title, vs, css, classic, adventure, allstar, homerun, training, unranked, direct, ranked, login, place, menu\n",
+                     "title, vs, css, classic, adventure, allstar, homerun, training, unranked, direct, ranked, login, place, watch, menu\n",
                      want);
         }
     }

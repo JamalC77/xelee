@@ -18,6 +18,7 @@ typedef enum OnlineKind {
     ONLINE_KIND_PROFILE = 4,
     ONLINE_KIND_LOGIN = 5, /* Slippi sign-in: the keyboard screen, not a match */
     ONLINE_KIND_PLACE = 6, /* XR: the stage-placement scene, then back to the menu */
+    ONLINE_KIND_WATCH = 7, /* Xelee Watch: a nearby headset's VS matches (src/pc/net_watch.h) */
 } OnlineKind;
 
 void gmOnline_SetKind(OnlineKind kind);
