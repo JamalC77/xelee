@@ -686,6 +686,15 @@ if (NOT ANDROID AND NOT IOS AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
         add_test(NAME slp_packet COMMAND slp_packet_test)
         set_tests_properties(slp_packet PROPERTIES LABELS melee TIMEOUT 30)
         add_dependencies(unit_tests slp_packet_test)
+        # Xelee Watch's wire codec (src/pc/net_watch_wire.c): pure byte
+        # packing, no sockets or game state, so it links on its own.
+        add_executable(watch_wire_test EXCLUDE_FROM_ALL tools/test_watch_wire.c
+                src/pc/net_watch_wire.c)
+        target_include_directories(watch_wire_test PRIVATE src)
+        target_compile_options(watch_wire_test PRIVATE -UNDEBUG)
+        add_test(NAME watch_wire COMMAND watch_wire_test)
+        set_tests_properties(watch_wire PROPERTIES LABELS melee TIMEOUT 30)
+        add_dependencies(unit_tests watch_wire_test)
         add_executable(slp_msg_test EXCLUDE_FROM_ALL tools/test_slp_msg.c)
         target_include_directories(slp_msg_test PRIVATE src)
         target_compile_options(slp_msg_test PRIVATE -UNDEBUG)
