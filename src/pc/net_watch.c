@@ -1592,6 +1592,13 @@ static void host_match_start(StartMeleeData* start) {
         host_set_state(WATCH_STATE_UNWATCHABLE, mode);
         return;
     }
+    if (pc_slp_play_active()) {
+        /* A Slippi replay reseeds mid-tick (gmvs.c slippiSyncRng), which a
+         * viewer, playing no replay, would not. */
+        pc_log_line("watch: a Slippi replay plays here; not watchable");
+        host_set_state(WATCH_STATE_UNWATCHABLE, mode);
+        return;
+    }
     s_seq++;
     int viewers = count_viewers();
     if (viewers == 0 && s_env.test_wait && s_thread != NULL) {
