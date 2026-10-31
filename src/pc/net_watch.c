@@ -119,7 +119,7 @@ typedef int watch_sock;
 #define CATCH_UP_SLACK 2
 #define AHEAD_MAX 4096       /* frames a viewer stores past its contiguous run */
 #define END_GRACE_PASSES 60  /* the host's match ended and ours has not asked to */
-#define LEAVE_HOLD_PASSES 60 /* B held this long leaves the match */
+#define LEAVE_HOLD_NS (1000 * MS_NS) /* B held this long leaves the match */
 #define REPORT_EVERY 600
 #define TXQ_MAX 16
 static const char k_dump_magic[8] = {'X', 'W', 'A', 'T', 'C', 'H', '1', '\n'};
@@ -1064,7 +1064,8 @@ static unsigned s_mismatches;
 static bool s_end_asked;
 static int32_t s_end_asked_at;
 static int s_end_wait;
-static int s_leave_passes;
+static uint64_t s_leave_ns; /* when B went down, 0 while it is up */
+static int32_t s_owed_at;   /* s_next at the last pc_watch_owed */
 static bool s_leaving;
 static uint32_t s_last_buttons;
 static bool s_after_match, s_last_diverged;
@@ -2159,7 +2160,8 @@ static void viewer_match_start(StartMeleeData* start) {
     s_end_asked = false;
     s_end_asked_at = -1;
     s_end_wait = 0;
-    s_leave_passes = 0;
+    s_leave_ns = 0;
+    s_owed_at = -1;
     s_leaving = false;
     s_starved = 0;
     s_buf_n = 0;
@@ -2350,9 +2352,14 @@ bool pc_watch_hold(void) {
     if (!atomic_load(&s_view_live)) {
         return false;
     }
-    /* B held for a second leaves the match for the waiting screen. */
-    s_leave_passes = (newest_buttons() & PAD_BUTTON_B) != 0 ? s_leave_passes + 1 : 0;
-    if (s_leave_passes >= LEAVE_HOLD_PASSES && !s_leaving) {
+    /* B held for a second leaves the match for the waiting screen. Timed,
+     * not counted in passes: catch-up runs passes faster than 60 a second. */
+    if ((newest_buttons() & PAD_BUTTON_B) == 0) {
+        s_leave_ns = 0;
+    } else if (s_leave_ns == 0) {
+        s_leave_ns = now_ns();
+    }
+    if (s_leave_ns != 0 && now_ns() - s_leave_ns >= LEAVE_HOLD_NS && !s_leaving) {
         s_leaving = true;
         pc_log_line("watch: leaving the match at frame %d (B held)", (int)s_next);
     }
@@ -2405,9 +2412,13 @@ bool pc_watch_hold(void) {
  * watched, 4 s behind after 16 minutes), so the frame boundaries run back
  * to back, each still one tick and one render, until it is back at its
  * target. A dump has the whole match in before it plays, so it plays at
- * the game's own pace. */
+ * the game's own pace. Nothing is owed after a boundary that did not tick
+ * (a starved pass, the overlay menu's pause loop): running the next one at
+ * once would pay nothing, and the menu's loop would spin unpaced. */
 int pc_watch_owed(void) {
-    if (!atomic_load(&s_view_live) || !s_started || s_leaving || s_file_mode) {
+    const bool ticked = s_next != s_owed_at;
+    s_owed_at = s_next;
+    if (!atomic_load(&s_view_live) || !s_started || s_leaving || s_file_mode || !ticked) {
         s_catching = false;
         return 0;
     }

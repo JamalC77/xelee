@@ -181,6 +181,9 @@ void pc_watch_tx_frame(const struct PADStatus* head, uint32_t ck, int32_t net_fr
 bool pc_watch_hold(void) {
     return false;
 }
+int pc_watch_owed(void) {
+    return 0;
+}
 bool pc_watch_end_scene_now(void) {
     return false;
 }

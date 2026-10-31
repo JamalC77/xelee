@@ -351,8 +351,11 @@ void pc_frame_boundary(void) {
      * frames drifted against the display and carried the tick the menus
      * last paced to, which SpaceWarp read as a gap before every frame. */
     if (xr_now != 0) {
-        if (s_xr_due == 0 || xr_now >= s_xr_due) {
-            s_xr_due = xr_now - late / sim_period; /* due, or owing `late` */
+        /* A viewer owing frames runs them now even when this boundary is
+         * on time: its schedule is the host's, not the headset's. */
+        if (s_xr_due == 0 || xr_now >= s_xr_due || watch_owed > 0) {
+            const u64 owe = late / sim_period;
+            s_xr_due = xr_now - (owe < xr_now ? owe : xr_now - 1); /* due, or owing `late` */
         }
         if (aurora_xr_pace_until(s_xr_due)) {
             next_sim_ns = SDL_GetTicksNS();
