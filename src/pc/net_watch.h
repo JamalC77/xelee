@@ -60,6 +60,10 @@ void pc_watch_tx_frame(const struct PADStatus* head, uint32_t ck, int32_t net_fr
  * not in yet (or the start buffer is not full), so the pass draws without
  * ticking; the local pads that came in are dropped. */
 bool pc_watch_hold(void);
+/* Once per frame boundary (src/pc/vi.c): how many frames more than the lag
+ * target are in, which the boundaries then run back to back, one tick and
+ * one render each; 0 while the viewer is at its target. */
+int pc_watch_owed(void);
 /* While held: the host's match is over and every frame of it has run, so
  * the scene ends now (also when the player held B to leave). */
 bool pc_watch_end_scene_now(void);

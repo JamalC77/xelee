@@ -32,6 +32,7 @@
  *   MELEE_WATCH_PORT=n         host: stream port (default 41011)
  *   MELEE_WATCH_HOST=ip[:port] viewer: the host to watch
  *   MELEE_WATCH_BUFFER=n       viewer: frames in before the first tick (default 6)
+ *   MELEE_WATCH_LAG=n          viewer: frames behind the host it catches up to (default 12)
  *   MELEE_WATCH_DUMP=path      host: also write every shared match to a file
  *   MELEE_WATCH_FILE=path      viewer: play such a file instead of a host
  *   MELEE_WATCH_TEST_WAIT=1    host: a match setup waits up to 10 s for a viewer
@@ -110,6 +111,12 @@ typedef int watch_sock;
 #define PREV_KEEP_NS (30000 * MS_NS)
 #define TEST_WAIT_MS 10000
 #define START_BUFFER 6
+/* Catch-up (pc_watch_owed): the viewer runs back to back once more than
+ * LAG_TARGET + CATCH_UP_SLACK frames are in, until LAG_TARGET are. 200 ms:
+ * a Quest on Wi-Fi went quiet for up to 400 ms now and then, and a smaller
+ * target turns each of those into a freeze. */
+#define LAG_TARGET 12
+#define CATCH_UP_SLACK 2
 #define AHEAD_MAX 4096       /* frames a viewer stores past its contiguous run */
 #define END_GRACE_PASSES 60  /* the host's match ended and ours has not asked to */
 #define LEAVE_HOLD_PASSES 60 /* B held this long leaves the match */
@@ -139,6 +146,7 @@ static struct {
     const char* dump;
     const char* file;
     int buffer;
+    int lag;
     bool test_wait;
     int drop;
     bool ignore_rev;
@@ -164,6 +172,8 @@ static void env_read(void) {
     s_env.file = env_str("MELEE_WATCH_FILE");
     v = env_str("MELEE_WATCH_BUFFER");
     s_env.buffer = v != NULL && atoi(v) > 0 ? atoi(v) : START_BUFFER;
+    v = env_str("MELEE_WATCH_LAG");
+    s_env.lag = v != NULL && atoi(v) > 0 ? atoi(v) : LAG_TARGET;
     v = env_str("MELEE_WATCH_TEST_WAIT");
     s_env.test_wait = v != NULL && v[0] == '1';
     v = env_str("MELEE_WATCH_DROP");
@@ -1046,6 +1056,7 @@ static FILE* s_file;
 static WatchHeader s_taken_hdr; /* the taken match's header, for the pin and the setup */
 static int32_t s_next;          /* the next match frame to run */
 static bool s_started;          /* the start buffer filled */
+static bool s_catching;         /* catch-up is running frames back to back */
 static bool s_have_cur;
 static uint32_t s_cur_ck;
 static int32_t s_cur_frame;
@@ -1060,6 +1071,7 @@ static bool s_after_match, s_last_diverged;
 static unsigned s_matches_done;
 /* the 600-frame report */
 static unsigned s_starved;
+static unsigned s_caught; /* boundaries catch-up ran back to back */
 static int32_t s_buf_min, s_buf_max;
 static int64_t s_buf_sum;
 static int s_buf_n;
@@ -2140,6 +2152,8 @@ static void viewer_match_start(StartMeleeData* start) {
     s_next = 0;
     atomic_store(&s_next_pub, 0);
     s_started = false;
+    s_catching = false;
+    s_caught = 0;
     s_have_cur = false;
     s_mismatches = 0;
     s_end_asked = false;
@@ -2386,6 +2400,36 @@ bool pc_watch_hold(void) {
     return hold;
 }
 
+/* The viewer fell behind (its load at match entry, a Wi-Fi stall, ticks
+ * its headset dropped: a Quest 2 ran 0.3% slower than the Quest 3 it
+ * watched, 4 s behind after 16 minutes), so the frame boundaries run back
+ * to back, each still one tick and one render, until it is back at its
+ * target. */
+int pc_watch_owed(void) {
+    if (!atomic_load(&s_view_live) || !s_started || s_leaving) {
+        s_catching = false;
+        return 0;
+    }
+    int32_t contiguous = -1;
+    watch_lock();
+    const ViewMatch* vm = playing();
+    if (vm != NULL) {
+        contiguous = vm->contiguous;
+    }
+    watch_unlock();
+    const int32_t avail = contiguous - s_next + 1;
+    if (avail > s_env.lag + CATCH_UP_SLACK) {
+        s_catching = true;
+    } else if (avail <= s_env.lag) {
+        s_catching = false;
+    }
+    if (!s_catching) {
+        return 0;
+    }
+    s_caught++;
+    return (int)(avail - s_env.lag);
+}
+
 bool pc_watch_end_scene_now(void) {
     if (!atomic_load(&s_view_live)) {
         return false;
@@ -2522,13 +2566,14 @@ static void viewer_feed(PADStatus* head) {
             const double host = st.frame + (double)(now_ns() - st_ns) * 60.0 / 1e9;
             snprintf(lag, sizeof lag, "%.0f ms", (host - (s_next - 1)) * 1000.0 / 60.0);
         }
-        pc_log_line("watch: frame %d: buffered %d/%.1f/%d (min/avg/max), %u starved passes, lag "
-                    "%s, loss %u%% (%u of %u datagrams after a gap)",
+        pc_log_line("watch: frame %d: buffered %d/%.1f/%d (min/avg/max), %u starved passes, %u "
+                    "caught up, lag %s, loss %u%% (%u of %u datagrams after a gap)",
             (int)(s_next - 1), (int)s_buf_min, (double)s_buf_sum / s_buf_n, (int)s_buf_max,
-            s_starved, lag, packets ? gaps * 100 / packets : 0u, gaps, packets);
+            s_starved, s_caught, lag, packets ? gaps * 100 / packets : 0u, gaps, packets);
         s_buf_n = 0;
         s_buf_sum = 0;
         s_starved = 0;
+        s_caught = 0;
     }
 }
 

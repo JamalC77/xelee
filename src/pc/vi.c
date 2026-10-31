@@ -316,17 +316,27 @@ void pc_frame_boundary(void) {
      * peer that froze behind the other one by the whole freeze, which time
      * sync then took seconds to close (pc_net_catch_up_ns). */
     u64 late = next_sim_ns != 0 && now > next_sim_ns ? now - next_sim_ns : 0;
+    /* Watching, the host's frames set the schedule: the viewer owes what
+     * it has buffered past its lag target (pc_watch_owed), whatever its
+     * own clock says. */
+    const bool watching = pc_watch_viewing();
+    const int watch_owed = watching ? pc_watch_owed() : 0;
 #ifdef AURORA_ENABLE_OPENXR
     /* Netplay in XR keeps its schedule in the headset's ticks instead
-     * (s_xr_due, below): how far behind it is is counted in those. */
-    const u64 xr_now = pc_net_active() ? aurora_xr_pace_count() : 0;
+     * (s_xr_due, below): how far behind it is is counted in those. So does
+     * watching, where a frame done after its tick then runs at once instead
+     * of waiting for the next one (aurora_xr_pace), which lost that tick. */
+    const u64 xr_now = pc_net_active() || watching ? aurora_xr_pace_count() : 0;
     if (xr_now == 0) {
         s_xr_due = 0;
     } else {
         late = s_xr_due != 0 && xr_now > s_xr_due ? (xr_now - s_xr_due) * sim_period : 0;
     }
 #endif
-    late = pc_net_active() ? pc_net_catch_up_ns(late) : late > sim_period * 2 ? 0 : late;
+    late = pc_net_active() ? pc_net_catch_up_ns(late) :
+           watching        ? (u64)watch_owed * sim_period :
+           late > sim_period * 2 ? 0 :
+                                   late;
 #ifdef AURORA_ENABLE_OPENXR
     /* XR build: when the headset runs at a multiple of 60 Hz, take the frame
      * cadence from it, so each game frame is shown for the same number of
@@ -358,7 +368,7 @@ void pc_frame_boundary(void) {
      * renders, unless MELEE_SLP_PLAY_PACED=1 (to watch it). */
     if (unpaced_playback()) {
         next_sim_ns = now;
-    } else if (next_sim_ns == 0 || now > next_sim_ns) {
+    } else if (next_sim_ns == 0 || now > next_sim_ns || watch_owed > 0) {
         next_sim_ns = now - late;
     } else if (now < next_sim_ns) {
         const u64 want = next_sim_ns - now;
