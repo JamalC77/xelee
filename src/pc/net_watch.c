@@ -2404,9 +2404,10 @@ bool pc_watch_hold(void) {
  * its headset dropped: a Quest 2 ran 0.3% slower than the Quest 3 it
  * watched, 4 s behind after 16 minutes), so the frame boundaries run back
  * to back, each still one tick and one render, until it is back at its
- * target. */
+ * target. A dump has the whole match in before it plays, so it plays at
+ * the game's own pace. */
 int pc_watch_owed(void) {
-    if (!atomic_load(&s_view_live) || !s_started || s_leaving) {
+    if (!atomic_load(&s_view_live) || !s_started || s_leaving || s_file_mode) {
         s_catching = false;
         return 0;
     }
